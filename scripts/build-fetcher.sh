@@ -63,6 +63,10 @@ cmake -S "c-ares-${CARES_VERSION}" -B build-cares \
     -DCARES_BUILD_TOOLS=OFF >/dev/null
 cmake --build build-cares -j"$(nproc)" >/dev/null
 cmake --install build-cares >/dev/null
+[ -f "${PREFIX}/lib/libcares.a" ] || {
+    echo "c-ares did not install a static library" >&2
+    exit 1
+}
 
 # ---------------------------------------------------------------------------
 # Mbed-TLS: the TLS itself.
@@ -79,6 +83,12 @@ cmake -S "mbedtls-${MBEDTLS_VERSION}" -B build-mbedtls \
     -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON >/dev/null
 cmake --build build-mbedtls -j"$(nproc)" >/dev/null
 cmake --install build-mbedtls >/dev/null
+for lib in libmbedtls.a libmbedx509.a libmbedcrypto.a; do
+    [ -f "${PREFIX}/lib/${lib}" ] || {
+        echo "Mbed-TLS did not install ${lib}" >&2
+        exit 1
+    }
+done
 
 # ---------------------------------------------------------------------------
 # curl: everything off except what a catalogue needs.
@@ -101,13 +111,18 @@ cd "curl-${CURL_VERSION}"
     --disable-unix-sockets --disable-netrc --disable-progress-meter \
     --without-libpsl --without-libidn2 --without-nghttp2 --without-brotli \
     --without-zstd --without-zlib --without-librtmp \
-    LDFLAGS="-static" >/dev/null
+    PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig" \
+    CPPFLAGS="-I${PREFIX}/include" \
+    LDFLAGS="-static -L${PREFIX}/lib" >/dev/null
 # -all-static at make time, not just -static at configure time: the link
 # goes through libtool, which understands its own flag and quietly ignores
 # the compiler's. Without this the binary comes out dynamically linked
 # against the build machine's loader - which is what the emulated check
 # caught the first time this ran.
-make -j"$(nproc)" LDFLAGS="-all-static" >/dev/null
+# The search path has to be repeated here: a variable given to make
+# replaces what configure recorded rather than adding to it, and dropping
+# -L left the linker unable to find the very libraries built above.
+make -j"$(nproc)" LDFLAGS="-all-static -L${PREFIX}/lib" >/dev/null
 cd "${WORK}"
 
 case "$(file -b "curl-${CURL_VERSION}/src/curl")" in
