@@ -14,7 +14,9 @@
 #include "gfx/font.h"
 #include "platform/device.h"
 #include "platform/power.h"
+#include "platform/net.h"
 #include "platform/system.h"
+#include "net/sntp.h"
 #include "platform/usbms.h"
 #include "app/home.h"
 #include "library/library.h"
@@ -115,7 +117,10 @@ void App::push(ViewPtr view) {
 }
 
 void App::pop() {
-  if (stack_.size() <= 1) return;
+  if (stack_.size() <= 1) {
+    if (quit_on_back_) quit(0);
+    return;
+  }
   stack_.back()->on_hide();
   retired_.push_back(std::move(stack_.back()));
   stack_.pop_back();
@@ -491,7 +496,7 @@ void App::handle_global(const InputEvent& event) {
       int start_y = event.y - event.dy;
       int edge = std::max(48, b.h / 10);
       if (event.swipe == SwipeDir::Up && start_y >= b.bottom() - edge) {
-        if (depth() > 1) {
+        if (depth() > 1 || quit_on_back_) {
           pop();
         } else {
           show_toast("Home");
@@ -588,6 +593,18 @@ int App::run() {
     if (now_ms() < animation_sweep_until && now_ms() - last_animation_sweep > 2000) {
       last_animation_sweep = now_ms();
       sys::stop_boot_animation();
+    }
+    // The clock, once per session, as soon as there is a network. In a
+    // child process: settimeofday changes the clock for everyone, and a
+    // time server that never answers must not stall the reader.
+    if (!clock_synced_ && !simulated_ && settings().clock_sync &&
+        Net::instance().connected()) {
+      clock_synced_ = true;
+      sys::run_detached([]() {
+        std::string error;
+        int64_t drift = 0;
+        if (!sync_clock(error, &drift)) CK_LOGW("clock: %s", error.c_str());
+      });
     }
     if (update_check_at && now_ms() > update_check_at) {
       update_check_at = 0;

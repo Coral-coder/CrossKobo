@@ -161,6 +161,33 @@ unzip -l "${ZIP}" | grep -q 'READ-ME-FIRST\.txt'
 check $? "zip carries instructions"
 
 # ---------------------------------------------------------------------------
+echo "catalogues add-on:"
+ADDON_ZIP=""
+for f in release/CrossKobo-catalogues-*-install.zip; do
+    ADDON_ZIP="${f}"
+done
+[ -f "${ADDON_ZIP}" ]
+check $? "add-on install zip exists"
+mkdir -p "${WORK}/addon"
+unzip -q -o "${ADDON_ZIP}" -d "${WORK}/addon"
+[ -f "${WORK}/addon/.adds/nm/crosskobo" ]
+check $? "add-on ships the NickelMenu entries on the drive"
+grep -q 'menu-launch.sh' "${WORK}/addon/.adds/nm/crosskobo"
+check $? "menu entries launch through menu-launch.sh"
+mkdir -p "${WORK}/addonroot"
+tar -xzf "${WORK}/addon/.kobo/KoboRoot.tgz" -C "${WORK}/addonroot"
+[ -x "${WORK}/addonroot/usr/local/crosskobo/crosskobo" ]
+check $? "add-on carries the binary"
+[ -x "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh" ]
+check $? "add-on carries the menu launcher"
+# The whole point of this package: the stock software stays in charge, so
+# nothing in it may touch the boot.
+[ ! -e "${WORK}/addonroot/etc" ]
+check $? "add-on installs no boot hook"
+grep -q -- '--return-to-kobo' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
+check $? "menu launcher hands the screen back on exit"
+
+# ---------------------------------------------------------------------------
 echo "uninstall payload:"
 mkdir -p "${WORK}/unroot"
 UNZIP_FILE=""

@@ -1,7 +1,10 @@
 #include "platform/system.h"
 
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "core/clock.h"
@@ -59,6 +62,24 @@ void stop_boot_animation() {
   // The scripts loop, so a TERM to the shell may land between iterations.
   sleep_ms(150);
   run("killall -q -KILL on-animator.sh animator.sh pickel pickel-mtk 2>/dev/null");
+}
+
+bool run_detached(const std::function<void()>& work) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    CK_LOGW("sys: could not fork: %s", strerror(errno));
+    return false;
+  }
+  if (pid > 0) {
+    int status = 0;
+    waitpid(pid, &status, 0);   // the intermediate exits at once
+    return true;
+  }
+  // Double fork: the grandchild is reparented to init, so the caller never
+  // has to wait for it.
+  if (fork() != 0) _exit(0);
+  work();
+  _exit(0);
 }
 
 void clear_crash_count() { fs::remove_file("/usr/local/crosskobo/crash-count"); }

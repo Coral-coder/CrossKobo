@@ -112,6 +112,71 @@ TXT
 (cd "${PKG}" && zip -q -r "${OUT}/CrossKobo-${VERSION}-install.zip" .kobo READ-ME-FIRST.txt)
 
 # ---------------------------------------------------------------------------
+# Catalogues add-on: the stock Kobo software stays in charge.
+#
+# Everything CrossKobo needs to browse OPDS catalogues, and nothing that
+# takes over the boot - no /etc/init.d hook, no rcS symlink. The entries
+# appear in the stock menus through NickelMenu, whose configuration lives
+# on the user partition, so it ships in the zip itself rather than in the
+# KoboRoot payload.
+# ---------------------------------------------------------------------------
+ADDON_PAY="${STAGE}/addon-payload"
+mkdir -p "${ADDON_PAY}/usr/local/crosskobo/fonts"
+install -m 755 "${PAYLOAD}/usr/local/crosskobo/crosskobo" \
+    "${ADDON_PAY}/usr/local/crosskobo/crosskobo"
+install -m 755 scripts/install/menu-launch.sh \
+    "${ADDON_PAY}/usr/local/crosskobo/menu-launch.sh"
+install -m 755 scripts/install/start-nickel.sh \
+    "${ADDON_PAY}/usr/local/crosskobo/start-nickel.sh"
+install -m 644 scripts/install/nm-crosskobo "${ADDON_PAY}/usr/local/crosskobo/nm-crosskobo"
+cp -r "${PAYLOAD}/usr/local/crosskobo/fonts/." "${ADDON_PAY}/usr/local/crosskobo/fonts/"
+printf '%s\n' "${VERSION}" > "${ADDON_PAY}/usr/local/crosskobo/VERSION"
+chmod 644 "${ADDON_PAY}/usr/local/crosskobo/VERSION"
+tar --owner=root --group=root --numeric-owner -czf "${STAGE}/addon-KoboRoot.tgz" \
+    -C "${ADDON_PAY}" .
+
+ADDON="${STAGE}/addon"
+mkdir -p "${ADDON}/.kobo" "${ADDON}/.adds/nm"
+cp "${STAGE}/addon-KoboRoot.tgz" "${ADDON}/.kobo/KoboRoot.tgz"
+install -m 644 scripts/install/nm-crosskobo "${ADDON}/.adds/nm/crosskobo"
+cat > "${ADDON}/READ-ME-FIRST.txt" <<TXT
+CrossKobo catalogues ${VERSION} - an add-on for the stock Kobo software
+=======================================================================
+
+This does NOT replace the Kobo interface. It adds OPDS catalogue browsing
+- Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Project Gutenberg - to
+the menus of the software your Kobo already runs.
+
+  1. Eject the Kobo safely and unplug it.
+  2. The device installs the add-on and restarts by itself.
+  3. Open the menu in the stock software. "CrossKobo", "Catalogues (OPDS)"
+     and "Shelfmark" are in it.
+
+It needs NickelMenu, which is what puts entries in the stock menus:
+
+  https://github.com/pgaskin/NickelMenu
+
+Install NickelMenu first (or afterwards - the order does not matter). The
+menu entries live in .adds/nm/crosskobo on this drive, which this zip has
+just written; edit that file to rename or remove them.
+
+Tapping an entry borrows the screen to show the catalogue browser, and
+hands it straight back to the Kobo software when you leave - swipe up from
+the bottom edge, or press a page-turn button.
+
+Books download into the "Downloads" folder on this drive, where the stock
+library finds them like anything else copied over USB. Add a catalogue with
+the "Add" button; a server that needs a username and password can have
+them added to .crosskobo/settings.json.
+
+To remove it: unzip CrossKobo-catalogues-${VERSION}-uninstall.zip onto the
+drive and eject. That takes the add-on and its menu entries away and leaves
+your books and downloads alone.
+TXT
+(cd "${ADDON}" && zip -q -r "${OUT}/CrossKobo-catalogues-${VERSION}-install.zip" \
+    .kobo .adds READ-ME-FIRST.txt)
+
+# ---------------------------------------------------------------------------
 # Firmware 4 uninstall package.
 # ---------------------------------------------------------------------------
 UNPAY="${STAGE}/uninstall-payload"
@@ -133,6 +198,24 @@ Your books, notebooks (the Notebooks folder) and CrossKobo settings (the
 gone.
 TXT
 (cd "${UNPKG}" && zip -q -r "${OUT}/CrossKobo-${VERSION}-uninstall.zip" .kobo READ-ME-FIRST.txt)
+
+# The catalogues add-on comes off with the same payload: it removes
+# /usr/local/crosskobo, any boot hook, and the NickelMenu entries, then
+# restores the stock animation script.
+ADDON_UN="${STAGE}/addon-uninstall"
+mkdir -p "${ADDON_UN}/.kobo"
+cp "${STAGE}/uninstall-KoboRoot.tgz" "${ADDON_UN}/.kobo/KoboRoot.tgz"
+cat > "${ADDON_UN}/READ-ME-FIRST.txt" <<TXT
+CrossKobo catalogues ${VERSION} uninstaller
+
+Eject the Kobo and unplug it. On the next boot the add-on is removed, along
+with its NickelMenu entries, and the stock Kobo software carries on as
+before.
+
+Your books, the Downloads folder and the .crosskobo folder are left alone.
+TXT
+(cd "${ADDON_UN}" && zip -q -r "${OUT}/CrossKobo-catalogues-${VERSION}-uninstall.zip" \
+    .kobo READ-ME-FIRST.txt)
 
 # ---------------------------------------------------------------------------
 # Firmware 5 packages, which use .kobo/update.tar instead of KoboRoot.tgz.

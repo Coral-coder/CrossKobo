@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <string>
 
 namespace ck {
@@ -29,6 +30,12 @@ void stop_boot_animation();
 // self-disable. Three forced power-offs in quick succession still trip it,
 // which is the documented way out of a wedged screen.
 void clear_crash_count();
+
+// Runs `work` in a detached grandchild process and returns immediately. The
+// shipping binary is statically linked and a wedged network must never hold
+// up drawing, so background work that only touches files and sockets is
+// done in a child rather than a thread. Nothing has to be reaped.
+bool run_detached(const std::function<void()>& work);
 // Siphons PLATFORM/PRODUCT/DBUS_SESSION_BUS_ADDRESS etc. out of a running
 // Nickel so we can hand them back when restarting it later. Must be called
 // before stop_nickel().

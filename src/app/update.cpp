@@ -17,6 +17,7 @@
 #include "net/http.h"
 #include "platform/device.h"
 #include "platform/net.h"
+#include "platform/system.h"
 
 namespace ck {
 namespace {
@@ -197,35 +198,24 @@ void start_background_check() {
 
   // A child process rather than a thread: the shipping binary is statically
   // linked, the fetch already runs a helper process for TLS, and a wedged
-  // network cannot then hold a thread inside the reader. The grandchild is
-  // reparented to init, so nothing has to be reaped here.
-  pid_t pid = fork();
-  if (pid < 0) {
-    CK_LOGW("update: could not fork a checker: %s", strerror(errno));
-    return;
-  }
-  if (pid > 0) {
-    int status = 0;
-    waitpid(pid, &status, 0);  // the intermediate exits immediately
-    return;
-  }
-  if (fork() != 0) _exit(0);
-  UpdateInfo info;
-  std::string error;
-  bool ok = check_for_update(info, error);
-  if (ok && info.newer) {
-    Json json = Json::object();
-    json["version"] = Json(info.version);
-    json["tag"] = Json(info.tag);
-    json["asset"] = Json(info.asset_name);
-    json["url"] = Json(info.asset_url);
-    json["size"] = Json((int64_t)info.size);
-    json["notes"] = Json(info.notes);
-    fs::write_file_atomic(kResultPath, json.dump(false));
-  } else if (!ok) {
-    CK_LOGW("update: background check failed: %s", error.c_str());
-  }
-  _exit(0);
+  // network cannot then hold a thread inside the reader.
+  sys::run_detached([]() {
+    UpdateInfo info;
+    std::string error;
+    bool ok = check_for_update(info, error);
+    if (ok && info.newer) {
+      Json json = Json::object();
+      json["version"] = Json(info.version);
+      json["tag"] = Json(info.tag);
+      json["asset"] = Json(info.asset_name);
+      json["url"] = Json(info.asset_url);
+      json["size"] = Json((int64_t)info.size);
+      json["notes"] = Json(info.notes);
+      fs::write_file_atomic(kResultPath, json.dump(false));
+    } else if (!ok) {
+      CK_LOGW("update: background check failed: %s", error.c_str());
+    }
+  });
 }
 
 bool take_background_result(UpdateInfo& out) {

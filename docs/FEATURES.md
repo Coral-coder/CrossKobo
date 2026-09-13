@@ -159,6 +159,10 @@ seconds are ignored so opening a book by accident does not pollute them.
 - Search uses the catalogue's own search link. Paged catalogues get a
   **More** button. Servers behind Basic authentication work: put `user` and
   `password` in the catalogue's entry in `.crosskobo/settings.json`.
+- **Without replacing the interface at all.** There is a separate
+  `CrossKobo-catalogues-<version>-install.zip` that installs only the
+  catalogue browser and its menu entries: no boot hook, no replacement
+  shell, the stock Kobo software stays in charge. See docs/INSTALL.md.
 - **In the stock Kobo software.** Its Discover tab belongs to a closed Qt
   application and cannot be extended from outside it. Where
   [NickelMenu](https://github.com/pgaskin/NickelMenu) is installed -

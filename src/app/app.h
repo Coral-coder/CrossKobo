@@ -21,6 +21,10 @@ class App {
   void pop();
   void replace(ViewPtr view);
   void pop_to_root();
+  // When set, going back from the root view leaves CrossKobo instead of
+  // doing nothing. Used by the menu launches from the stock software, where
+  // one screen is the whole application.
+  void set_quit_on_back(bool on) { quit_on_back_ = on; }
   View* top();
   size_t depth() const { return stack_.size(); }
 
@@ -84,6 +88,8 @@ class App {
   bool asleep_ = false;
   int64_t last_activity_ms_ = 0;
   int64_t sleep_started_ms_ = 0;
+  bool quit_on_back_ = false;
+  bool clock_synced_ = false;
   bool usb_prompt_open_ = false;
   bool usb_was_plugged_ = false;
 

@@ -8,15 +8,17 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.5, running on a Kobo Libra Colour.**
-> Each release so far has been tested on real hardware and fixed what that
-> turned up: the boot animation that repainted over the interface, a
-> combined touch-and-stylus panel that broke taps, a transposed touch axis,
-> sleep that woke straight back up, a blinking boot LED, a colour page that
-> refreshed once a minute, and a handover to the stock software that undid
-> itself. Read [docs/INSTALL.md](docs/INSTALL.md) before installing,
-> especially the recovery section: holding a page-turn button while the
-> device starts boots the stock software, and the installer is reversible.
+> **Status: version 0.1.6, running on a Kobo Libra Colour.**
+> Two ways in: an **add-on** that leaves the stock Kobo software in charge
+> and only adds OPDS catalogue browsing to its menus, or the full interface
+> that starts in its place. Every release so far has been installed on real
+> hardware and fixed what that turned up: the boot animation that repainted
+> over the interface, a combined touch-and-stylus panel that broke taps, a
+> transposed touch axis, sleep that woke straight back up, a blinking boot
+> LED, and a handover to the stock software that undid itself. Read
+> [docs/INSTALL.md](docs/INSTALL.md) before installing the full interface -
+> holding a page-turn button while the device starts boots the stock
+> software, and the installer is reversible.
 
 ## What it is, and what it is not
 
@@ -76,12 +78,21 @@ Full list: [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Install
 
-Download `CrossKobo-0.1.5-install.zip` from the
-[latest release](https://github.com/Coral-coder/CrossKobo/releases/latest),
-unpack it to the root of the Kobo's USB drive, and eject. The device
-installs CrossKobo and restarts by itself. (Firmware 5.x devices want the
-`-fw5-install` package instead; *More → Settings → Device information* on
-the Kobo tells you which you have.)
+Two packages, from the
+[latest release](https://github.com/Coral-coder/CrossKobo/releases/latest):
+
+- **`CrossKobo-catalogues-<version>-install.zip`** - an add-on. It leaves
+  the stock Kobo software in charge and adds OPDS catalogue browsing
+  (Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Gutenberg) to its
+  menus, through [NickelMenu](https://github.com/pgaskin/NickelMenu).
+  Nothing takes over the boot.
+- **`CrossKobo-<version>-install.zip`** - the full interface, which starts
+  instead of the stock Kobo home screen.
+
+Either one: unpack it to the root of the Kobo's USB drive and eject. The
+device installs and restarts by itself. (Firmware 5.x devices want the
+`-fw5-install` package for the full interface; *More → Settings → Device
+information* on the Kobo tells you which you have.)
 
 The full procedure, including how to get back to the stock software and
 what to do if something goes wrong, is in [docs/INSTALL.md](docs/INSTALL.md).

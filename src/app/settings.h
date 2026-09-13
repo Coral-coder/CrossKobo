@@ -39,6 +39,10 @@ struct Settings {
   // Looks for a new release once a day, and only when Wi-Fi is already
   // connected. Never turns the radio on by itself.
   bool auto_update_check = true;
+  // Sets the clock from a time server when Wi-Fi is connected. CrossKobo
+  // replaces the software that normally does this, so without it the time
+  // drifts and reading statistics land on the wrong day.
+  bool clock_sync = true;
   bool status_bar_battery = true;
   bool status_bar_progress_bar = true;
   int status_bar_progress_thickness = 3;

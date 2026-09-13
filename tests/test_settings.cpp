@@ -5,6 +5,7 @@
 
 #include "app/settings.h"
 #include "app/update.h"
+#include "net/sntp.h"
 #include "core/fs.h"
 #include "core/json.h"
 #include "core/log.h"
@@ -131,6 +132,41 @@ int main() {
 
   // Point sizes must scale with panel density.
   CHECK(clamped.font_px(300) > clamped.font_px(212));
+
+  // The SNTP decoder: byte arithmetic on a packet from the network, so the
+  // interesting cases are the malformed ones.
+  {
+    unsigned char reply[48] = {0};
+    std::string error;
+    // Mode 4, stratum 2, transmit timestamp = 2026-09-13T12:00:00Z.
+    const int64_t kUnix = 1789646400LL;
+    const uint32_t kNtp = (uint32_t)(kUnix + 2208988800LL);
+    reply[0] = 0x24;
+    reply[1] = 2;
+    reply[40] = (unsigned char)(kNtp >> 24);
+    reply[41] = (unsigned char)(kNtp >> 16);
+    reply[42] = (unsigned char)(kNtp >> 8);
+    reply[43] = (unsigned char)kNtp;
+    CHECK(sntp_decode(reply, error) == kUnix);
+
+    // A client packet is not an answer.
+    reply[0] = 0x23;
+    CHECK(sntp_decode(reply, error) == 0);
+    reply[0] = 0x24;
+
+    // Stratum 0 is the kiss of death.
+    reply[1] = 0;
+    CHECK(sntp_decode(reply, error) == 0);
+    reply[1] = 2;
+
+    // A zero timestamp, and a time before the epoch we trust.
+    unsigned char zero_stamp[48] = {0};
+    zero_stamp[0] = 0x24;
+    zero_stamp[1] = 2;
+    CHECK(sntp_decode(zero_stamp, error) == 0);
+    reply[40] = 0x80;  // 1932 in NTP terms
+    CHECK(sntp_decode(reply, error) == 0);
+  }
 
   // Version comparison drives the updater: a wrong answer either nags
   // forever or never offers anything.

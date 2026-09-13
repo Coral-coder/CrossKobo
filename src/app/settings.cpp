@@ -66,6 +66,7 @@ Json Settings::to_json() const {
   j["statusBarTitle"] = Json(status_bar_title);
   j["statusBarClock"] = Json(status_bar_clock);
   j["autoUpdateCheck"] = Json(auto_update_check);
+  j["clockSync"] = Json(clock_sync);
   j["touchCalibrated"] = Json(touch_calibrated);
   {
     Json list = Json::array();
@@ -151,6 +152,7 @@ void Settings::from_json(const Json& j) {
   status_bar_title = j.get_bool("statusBarTitle", status_bar_title);
   status_bar_clock = j.get_bool("statusBarClock", status_bar_clock);
   auto_update_check = j.get_bool("autoUpdateCheck", auto_update_check);
+  clock_sync = j.get_bool("clockSync", clock_sync);
   touch_calibrated = j.get_bool("touchCalibrated", touch_calibrated);
   catalogue_folder = j.get_string("catalogueFolder", catalogue_folder);
   if (const Json* list = j.find("catalogues")) {

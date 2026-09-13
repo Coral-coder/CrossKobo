@@ -11,6 +11,35 @@ release has not been run on real hardware yet.
 
 ---
 
+## Two ways to install
+
+**The catalogues add-on** leaves your Kobo exactly as it is and adds OPDS
+catalogue browsing - Shelfmark, Calibre-Web, Kavita, Komga, BookLore,
+Project Gutenberg - to the stock software's menus. Nothing takes over the
+boot, and if you do not like it, nothing has to be undone beyond unzipping
+the uninstaller.
+
+1. Install [NickelMenu](https://github.com/pgaskin/NickelMenu). It is what
+   puts entries into the stock Kobo menus; the stock Discover tab belongs
+   to a closed application and cannot be extended from outside it.
+2. Unpack `CrossKobo-catalogues-<version>-install.zip` to the root of the
+   Kobo's drive and eject. The device installs it and restarts.
+3. Open the menu in the stock software: **CrossKobo**, **Catalogues
+   (OPDS)** and **Shelfmark** are in it. Tapping one borrows the screen and
+   hands it back when you leave - swipe up from the bottom edge, or press a
+   page-turn button.
+
+Books download into `Downloads` on the drive, where the stock library finds
+them like anything copied over USB. The menu entries are a plain text file
+at `.adds/nm/crosskobo`: rename or remove them by editing it. To remove the
+add-on, unpack `CrossKobo-catalogues-<version>-uninstall.zip` and eject.
+
+**The full CrossKobo interface** replaces the stock software at boot: its
+own library, reader, handwritten notebooks and statistics. That is what the
+rest of this document describes. The two can be installed together - the
+add-on's menu entries work either way - but the full interface is the one
+that needs the recovery section below.
+
 ## Before you start
 
 1. **Check your firmware version.** On the Kobo: *More → Settings → Device
