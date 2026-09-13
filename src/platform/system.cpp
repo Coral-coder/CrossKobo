@@ -42,6 +42,20 @@ bool is_root() { return geteuid() == 0; }
 
 bool nickel_running() { return run("pkill -0 nickel 2>/dev/null") == 0; }
 
+void signal_ready(bool ready) {
+  const char* kFlag = "/tmp/crosskobo-ready";
+  if (ready) {
+    fs::write_file_atomic(kFlag, "1\n");
+  } else {
+    fs::remove_file(kFlag);
+  }
+}
+
+void allow_nickel() {
+  fs::write_file_atomic("/tmp/crosskobo-allow-nickel", "1\n");
+  fs::remove_file("/tmp/crosskobo-ready");
+}
+
 void capture_nickel_env() {
   std::string pid = run_capture("pidof -s nickel 2>/dev/null");
   if (pid.empty()) return;
@@ -103,6 +117,8 @@ bool start_nickel() {
     return false;
   }
   CK_LOGI("sys: handing back to the stock Kobo UI");
+  // Stand the boot watchdog down first, or it will kill what we start.
+  allow_nickel();
   wifi_down();
   sync();
 

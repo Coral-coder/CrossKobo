@@ -20,6 +20,7 @@
 #include "notes/notes.h"
 #include "platform/device.h"
 #include "platform/input.h"
+#include "platform/net.h"
 #include "platform/screen.h"
 #include "reader/reader.h"
 #include "reader/state.h"
@@ -33,6 +34,8 @@ std::string g_out = "out/sim";
 int g_shots = 0;
 
 void shot(const std::string& name) {
+  // Screenshots should show the screen, not a toast left over from setup.
+  App::instance().clear_toast();
   App::instance().render_now();
   std::string path = format("%s/%02d-%s.png", g_out.c_str(), ++g_shots, name.c_str());
   if (Screen::instance().canvas().save_png(path)) {
@@ -245,6 +248,15 @@ int main(int argc, char** argv) {
     app.pop();
   }
   show(make_notes_browser(), "notes-browser");
+  app.pop();
+
+  // The network screen, with a simulated radio so it can be reviewed.
+  Net::instance().set_simulated(true);
+  Net::instance().power_on();
+  show(make_network_screen(), "wifi");
+  app.pop();
+  Net::instance().connect("Reading Room", "", false);
+  show(make_network_screen(), "wifi-connected");
   app.pop();
 
   show(make_settings_screen(), "settings");

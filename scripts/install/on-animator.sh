@@ -4,23 +4,26 @@
 #
 # The firmware runs /etc/init.d/on-animator.sh during boot to draw the
 # start-up animation. CrossKobo replaces it with this script, which starts
-# the CrossKobo launcher detached from this process and then draws the same
-# animation the stock script does, so boot looks unchanged.
+# the CrossKobo launcher and keeps drawing the stock animation until
+# CrossKobo has the screen - so boot looks normal, and the stock reading
+# software never appears.
 #
 # This is the mechanism fmon, KFMon and Kobo Start Menu have all used for
 # years. To undo it, install the CrossKobo uninstaller, which puts the
 # stock animation script back.
 
 INSTALL_DIR="/usr/local/crosskobo"
+READY_FLAG="/tmp/crosskobo-ready"
+
+rm -f "${READY_FLAG}"
 
 if [ -x "${INSTALL_DIR}/crosskobo.sh" ]; then
-    # setsid detaches the launcher: Nickel kills on-animator.sh by name when
-    # it starts, and we do not want to be killed along with it.
+    # setsid detaches the launcher, so it survives this script being killed.
     setsid /bin/sh "${INSTALL_DIR}/crosskobo.sh" >/dev/null 2>&1 &
 fi
 
 # ---------------------------------------------------------------------------
-# Stock boot animation (functionally identical to the firmware's own).
+# Stock boot animation, drawn until CrossKobo takes over the screen.
 # ---------------------------------------------------------------------------
 PRODUCT="$(/bin/sh /bin/kobo_config.sh 2>/dev/null)"
 [ "${PRODUCT}" != "trilogy" ] && PREFIX="${PRODUCT}-"
@@ -40,7 +43,7 @@ PICKEL="/usr/local/Kobo/pickel"
 [ -x "/usr/local/Kobo/pickel-mtk" ] && PICKEL="/usr/local/Kobo/pickel-mtk"
 
 i=0
-while true; do
+while [ ! -f "${READY_FLAG}" ]; do
     i=$(( (i + 1) % 11 ))
     image="/etc/images/${PREFIX}on-${i}.raw.gz"
     if [ -s "${image}" ]; then
@@ -50,4 +53,10 @@ while true; do
     else
         sleep 1
     fi
+done
+
+# CrossKobo owns the screen now. Stay alive but idle: the firmware kills
+# this script when it wants to, and exiting early upsets some rcS versions.
+while [ -f "${READY_FLAG}" ]; do
+    sleep 10
 done

@@ -17,6 +17,7 @@
 #include "gfx/font.h"
 #include "library/library.h"
 #include "platform/device.h"
+#include "platform/net.h"
 #include "platform/power.h"
 #include "platform/screen.h"
 #include "platform/system.h"
@@ -418,6 +419,7 @@ ViewPtr make_settings_screen() {
     kPower,
     kControls,
     kLibrary,
+    kNetwork,
     kAbout,
     kReturnToKobo,
     kRestart,
@@ -431,6 +433,14 @@ ViewPtr make_settings_screen() {
   items.push_back(row(kPower, "Power and sleep"));
   items.push_back(row(kControls, "Controls"));
   items.push_back(row(kLibrary, "Library"));
+  {
+    Net& net = Net::instance();
+    net.refresh_status();
+    items.push_back(row(kNetwork, "Wi-Fi",
+                        net.connected() ? net.current_ssid()
+                                        : (net.available() ? "Off" : "Unavailable"),
+                        net.connected() ? net.status_text() : ""));
+  }
   items.push_back(section("System"));
   items.push_back(row(kAbout, "About CrossKobo"));
   items.push_back(row(kRestart, "Restart CrossKobo"));
@@ -445,6 +455,7 @@ ViewPtr make_settings_screen() {
       case kPower: push_power_settings(); break;
       case kControls: push_controls_settings(); break;
       case kLibrary: push_library_settings(); break;
+      case kNetwork: App::instance().push(make_network_screen()); break;
       case kAbout: App::instance().push(make_about_screen()); break;
       case kRestart:
         settings().save();

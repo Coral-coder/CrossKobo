@@ -26,6 +26,16 @@ struct DeviceInfo {
 
   int dpi = 300;
 
+  // Facts needed to drive Wi-Fi and USB without the stock software's help.
+  std::string wifi_module;       // e.g. "wlan_drv_gen4m" (MTK), "8821cs"
+  std::string wifi_module_dir;   // where the .ko files live
+  std::string wifi_interface;    // e.g. "wlan0" or "eth0"
+  std::string user_partition;    // block device behind /mnt/onboard
+  std::string sd_partition;      // may be empty
+  std::string usb_gadget_name;   // configfs gadget name ("kobo" or "g1")
+  std::string usb_udc;           // USB device controller, e.g. "11211000.usb"
+  std::string serial;            // device serial, from the version tag
+
   // sysfs knobs, probed at startup; empty when unsupported.
   std::string frontlight_brightness;
   std::string frontlight_warmth;

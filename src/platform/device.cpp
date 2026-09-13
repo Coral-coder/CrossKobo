@@ -80,12 +80,25 @@ void probe() {
     d.layout = FirmwareLayout::V5;
   }
 
+  // PLATFORM is exported by the firmware's rcS *after* our boot hook runs,
+  // so when CrossKobo starts the whole show it has to work this out for
+  // itself. The driver directory is named after the platform, which is the
+  // most reliable source: /drivers/mt8113t-ntx, /drivers/mx6sll-ntx, ...
   d.platform = getenv("PLATFORM") ? getenv("PLATFORM") : "";
   if (d.platform.empty()) {
-    // b300-ntx is the MediaTek platform directory name.
-    if (fs::exists("/etc/u-boot/b300-ntx/u-boot.mmc")) d.platform = "b300-ntx";
+    std::vector<fs::Entry> drivers = fs::list_dir("/drivers");
+    for (const fs::Entry& e : drivers) {
+      if (!e.is_dir) continue;
+      // Skip the generic directories some firmware ships alongside.
+      if (e.name == "common" || e.name == "wifi") continue;
+      d.platform = e.name;
+      if (e.name.find("-ntx") != std::string::npos) break;
+    }
   }
-  d.is_mtk = d.platform == "b300-ntx" || fs::exists("/dev/hwtcon") ||
+  if (!d.platform.empty()) setenv("PLATFORM", d.platform.c_str(), 0);
+  if (!d.codename.empty()) setenv("PRODUCT", d.codename.c_str(), 0);
+
+  d.is_mtk = starts_with(d.platform, "mt") || fs::exists("/dev/wmtWifi") ||
              fs::exists("/proc/hwtcon") || fs::exists("/usr/local/Kobo/pickel-mtk");
   d.has_color_panel = probe_color_panel();
 
@@ -110,6 +123,67 @@ void probe() {
   });
   d.charging_led = first_existing({"/sys/class/leds/LED/brightness",
                                    "/sys/class/leds/bd71828-green-led/brightness"});
+
+  // ------------------------------------------------------------------ Wi-Fi
+  // The module name is not guessable, so look for the .ko the firmware
+  // ships. MediaTek boards keep theirs in an mt66xx subdirectory.
+  const char* kWifiModules[] = {"wlan_drv_gen4m", "moal",   "8821cs", "8189fs",
+                                "8192ee",         "dhd",    "wifi_drv"};
+  std::vector<std::string> wifi_dirs = {"/drivers/" + d.platform + "/mt66xx",
+                                        "/drivers/" + d.platform + "/wifi",
+                                        "/drivers/" + d.platform};
+  for (const std::string& dir : wifi_dirs) {
+    if (!fs::is_dir(dir)) continue;
+    for (const char* mod : kWifiModules) {
+      if (!fs::exists(dir + "/" + mod + ".ko")) continue;
+      d.wifi_module = mod;
+      d.wifi_module_dir = dir;
+      break;
+    }
+    if (!d.wifi_module.empty()) break;
+  }
+  // The interface name appears once the module is loaded; if it is already
+  // up we can read it straight from sysfs.
+  for (const fs::Entry& e : fs::list_dir("/sys/class/net")) {
+    if (e.name == "lo" || starts_with(e.name, "usb") || starts_with(e.name, "rndis")) continue;
+    if (fs::exists(e.path + "/wireless") || fs::exists(e.path + "/phy80211") ||
+        starts_with(e.name, "wlan")) {
+      d.wifi_interface = e.name;
+      break;
+    }
+  }
+  if (d.wifi_interface.empty()) {
+    const char* iface = getenv("INTERFACE");
+    d.wifi_interface = iface && *iface ? iface : (d.is_mtk ? "wlan0" : "eth0");
+  }
+
+  // -------------------------------------------------------------------- USB
+  // The user partition is the twelfth on MediaTek boards and the third on
+  // the older NXP ones; check before trusting either.
+  for (const char* candidate : {"/dev/mmcblk0p12", "/dev/mmcblk0p3", "/dev/mmcblk0p4"}) {
+    if (fs::exists(candidate)) {
+      d.user_partition = candidate;
+      break;
+    }
+  }
+  // Prefer whatever is actually mounted at onboard, which is authoritative.
+  std::string mounts;
+  if (fs::read_file("/proc/mounts", mounts)) {
+    for (const std::string& line : split(mounts, '\n')) {
+      std::vector<std::string> fields = split(line, ' ');
+      if (fields.size() < 2) continue;
+      if (fields[1] == "/mnt/onboard") d.user_partition = fields[0];
+      if (fields[1] == "/mnt/sd") d.sd_partition = fields[0];
+    }
+  }
+  if (d.sd_partition.empty() && fs::exists("/dev/mmcblk1p1")) d.sd_partition = "/dev/mmcblk1p1";
+  // Firmware 5 renamed the gadget; the init script only exists there.
+  d.usb_gadget_name = fs::exists("/etc/init.d/usb-gadget") ? "kobo" : "g1";
+  for (const fs::Entry& e : fs::list_dir("/sys/class/udc")) {
+    d.usb_udc = e.name;
+    break;
+  }
+  d.serial = read_version_field(0);
 
   // Per-model traits. The codenames come from Kobo's own hardware config.
   struct Model {
@@ -162,6 +236,10 @@ std::string DeviceInfo::describe() const {
     case FirmwareLayout::V5: out += " [fw5]"; break;
     default: break;
   }
+  if (!platform.empty()) out += " platform=" + platform;
+  if (!wifi_module.empty()) out += " wifi=" + wifi_module + "/" + wifi_interface;
+  if (!user_partition.empty()) out += " onboard=" + user_partition;
+  if (!usb_udc.empty()) out += " udc=" + usb_udc;
   return out;
 }
 

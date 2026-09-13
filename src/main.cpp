@@ -121,10 +121,15 @@ int main(int argc, char** argv) {
   }
 
   if (!simulate && device().is_kobo && !keep_nickel) {
-    // Take the environment Nickel was given by the system startup scripts
-    // before stopping it: restarting it later needs the same variables.
-    sys::capture_nickel_env();
-    sys::stop_nickel();
+    // If the stock UI is up (either because the boot watchdog is disabled or
+    // because CrossKobo was started by hand) take its environment before
+    // stopping it: restarting it later goes more smoothly with the same
+    // variables. When CrossKobo owns the boot there is nothing to take, and
+    // the device probe has worked everything out for itself.
+    if (sys::nickel_running()) {
+      sys::capture_nickel_env();
+      sys::stop_nickel();
+    }
   }
 
   App& app = App::instance();
@@ -134,6 +139,9 @@ int main(int argc, char** argv) {
     return kExitError;
   }
 
+  // Tell the boot hook it can stop drawing the start-up animation.
+  if (!simulate) sys::signal_ready(true);
+
   Stats::instance().load();
   Recents::instance().load();
 
@@ -142,6 +150,7 @@ int main(int argc, char** argv) {
 
   int code = app.run();
   app.shutdown();
+  if (!simulate) sys::signal_ready(false);
 
   if (code == kExitReturnToNickel && !simulate && device().is_kobo) {
     sys::start_nickel();

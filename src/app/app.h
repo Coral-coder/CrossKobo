@@ -42,6 +42,7 @@ class App {
   void return_to_kobo_ui();
 
   void show_toast(const std::string& message, int ms = 1800);
+  void clear_toast() { toast_text_.clear(); }
   // Simple modal confirm; blocks in its own event loop.
   bool confirm(const std::string& title, const std::string& message,
                const std::string& ok_label = "OK",

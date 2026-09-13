@@ -7,6 +7,7 @@
 
 #include "core/clock.h"
 #include "core/str.h"
+#include "platform/net.h"
 
 namespace ck {
 
@@ -77,6 +78,18 @@ int draw_top_bar(Canvas& c, const Rect& area, const std::string& title,
       int w = text_width(pct, st);
       draw_text_in(c, Rect(right_edge - w, bar.y, w, h), pct, st, 1);
       right_edge -= w + 12;
+    }
+  }
+  // Wi-Fi, when it is on: connected devices show the fan, a powered but
+  // unconnected radio shows it struck through.
+  {
+    Net& net = Net::instance();
+    if (net.state() != NetState::Off) {
+      int size = th.base_px + 2;
+      Rect icon(right_edge - size, bar.y + (h - size) / 2, size, size);
+      draw_icon(c, icon, net.connected() ? Icon::Wifi : Icon::WifiOff,
+                net.connected() ? th.fg : th.muted);
+      right_edge = icon.x - 10;
     }
   }
   if (info.show_clock) {
@@ -158,18 +171,22 @@ void draw_list_row(Canvas& c, const Rect& r, const ListRow& row) {
     avail -= f.w + th.padding / 2;
   }
 
+  // Trailing text first, then the tick to its left: both used to be drawn
+  // hard against the right edge and overlapped each other.
+  int right_edge = r.right() - th.padding;
+  if (!row.trailing.empty()) {
+    TextStyle st = ui_style(th.small_px, th.muted);
+    int w = text_width(row.trailing, st);
+    draw_text_in(c, Rect(right_edge - w, r.y, w, r.h), row.trailing, st, 1);
+    right_edge -= w + th.padding / 2;
+    avail -= w + th.padding;
+  }
   if (row.check) {
     int size = th.base_px;
-    Rect tick(r.right() - th.padding - size, r.y + (r.h - size) / 2, size, size);
+    Rect tick(right_edge - size, r.y + (r.h - size) / 2, size, size);
     draw_icon(c, tick, Icon::Check, th.accent);
-    avail -= size + th.padding;
-  }
-  std::string trailing = row.trailing;
-  if (!trailing.empty()) {
-    TextStyle st = ui_style(th.small_px, th.muted);
-    int w = text_width(trailing, st);
-    draw_text_in(c, Rect(r.right() - th.padding - w, r.y, w, r.h), trailing, st, 1);
-    avail -= w + th.padding;
+    right_edge = tick.x - th.padding / 2;
+    avail -= size + th.padding / 2;
   }
 
   bool two_line = !row.subtitle.empty();

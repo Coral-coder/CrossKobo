@@ -57,6 +57,12 @@ grep -q 'crosskobo.sh' "${WORK}/rootfs/etc/init.d/on-animator.sh"
 check $? "boot hook starts the launcher"
 grep -q 'setsid' "${WORK}/rootfs/etc/init.d/on-animator.sh"
 check $? "launcher is detached from the boot hook"
+grep -q 'crosskobo-ready' "${WORK}/rootfs/etc/init.d/on-animator.sh"
+check $? "boot hook stops animating once CrossKobo has the screen"
+grep -q 'killall -q -TERM nickel' "${WORK}/rootfs/usr/local/crosskobo/crosskobo.sh"
+check $? "launcher keeps the stock UI from drawing during boot"
+grep -q 'crosskobo-allow-nickel' "${WORK}/rootfs/usr/local/crosskobo/start-nickel.sh"
+check $? "handover stands the watchdog down"
 
 # The launcher must honour the escape hatch and cap crash loops.
 grep -q 'DISABLE' "${WORK}/rootfs/usr/local/crosskobo/crosskobo.sh"

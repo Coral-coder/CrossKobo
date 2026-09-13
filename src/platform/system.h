@@ -8,6 +8,11 @@ namespace ck {
 namespace sys {
 
 bool nickel_running();
+// Raises or clears the flag the boot hook watches: while it is set, the
+// hook stops drawing the boot animation and leaves the screen to us.
+void signal_ready(bool ready);
+// Lets the boot watchdog know the stock UI is meant to run from now on.
+void allow_nickel();
 // Siphons PLATFORM/PRODUCT/DBUS_SESSION_BUS_ADDRESS etc. out of a running
 // Nickel so we can hand them back when restarting it later. Must be called
 // before stop_nickel().

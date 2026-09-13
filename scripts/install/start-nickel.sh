@@ -6,6 +6,11 @@
 
 PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/lib"
 
+# Tell the boot watchdog to stand down: from here on the stock UI is meant
+# to be running.
+touch /tmp/crosskobo-allow-nickel 2>/dev/null
+rm -f /tmp/crosskobo-ready 2>/dev/null
+
 if pkill -0 nickel 2>/dev/null; then
     # Already running: nothing to do.
     exit 0
