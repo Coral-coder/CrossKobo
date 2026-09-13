@@ -84,14 +84,36 @@ struct Settings {
   bool buttons_follow_rotation = true;
   std::string usb_action = "ask";    // ask|handover|ignore
   TouchTransform touch_transform;
+  // Set once the calibration wizard has run. Until then the platform layer
+  // is free to guess the panel's orientation from its axis ranges; after
+  // it, the user's answer is the whole story.
+  bool touch_calibrated = false;
   TouchTransform pen_transform;
   bool log_debug = false;
+
+  // ----------------------------------------------------------- catalogues
+  // Saved OPDS catalogues: Shelfmark, Calibre-Web, Kavita, Komga, BookLore
+  // and the public ones all speak the same format. Credentials are stored
+  // in the settings file on the user partition, which is visible over USB,
+  // so this is Basic authentication for a home server - not a secret store.
+  struct Catalogue {
+    std::string name;
+    std::string url;
+    std::string user;
+    std::string password;
+  };
+  std::vector<Catalogue> catalogues;
+  // Where books fetched from a catalogue are written, under the drive root.
+  std::string catalogue_folder = "Downloads";
 
   // ------------------------------------------------------------ interface
   void load();
   // Seeds settings that depend on which device this is. Called when there
   // is no settings file yet, so a calibration the user makes later sticks.
   void apply_device_defaults();
+  // Just the touch mapping part, re-applied on every load until the user
+  // calibrates, so an old build's guess does not stick forever.
+  void apply_touch_defaults();
   void save() const;
   Json to_json() const;
   void from_json(const Json& j);

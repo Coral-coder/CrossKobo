@@ -147,6 +147,27 @@ session, longest session, pages per minute, time today, reading streak in
 days, reading-since date, and per-book progress. Sessions shorter than five
 seconds are ignored so opening a book by accident does not pollute them.
 
+## Catalogues (OPDS)
+
+- *Settings → Catalogues*, or the **Catalogues** button in the library,
+  keeps a list of OPDS servers: Shelfmark, Calibre-Web, Kavita, Komga,
+  BookLore, Project Gutenberg - anything that speaks OPDS.
+- Navigation entries drill in, books show their author and summary, and
+  downloading writes straight into `Downloads` on the drive, where the
+  library picks it up like anything copied over USB. EPUB is preferred when
+  a catalogue offers several formats.
+- Search uses the catalogue's own search link. Paged catalogues get a
+  **More** button. Servers behind Basic authentication work: put `user` and
+  `password` in the catalogue's entry in `.crosskobo/settings.json`.
+- **In the stock Kobo software.** Its Discover tab belongs to a closed Qt
+  application and cannot be extended from outside it. Where
+  [NickelMenu](https://github.com/pgaskin/NickelMenu) is installed -
+  the established way to add entries to the stock menus - CrossKobo drops a
+  config file into `.adds/nm/crosskobo` on first run, which adds
+  **CrossKobo**, **Catalogues (OPDS)** and **Shelfmark** to the stock menu.
+  Each one borrows the screen and hands it back when you leave. The
+  uninstaller removes that file again.
+
 ## Getting around
 
 - **Swipe up from the bottom edge** to go back, from anywhere. There is no
@@ -159,6 +180,25 @@ seconds are ignored so opening a book by accident does not pollute them.
 - The page-turn buttons work anywhere they mean something: they open the
   last book from the home screen, answer the USB prompt, and dismiss the
   quick panel.
+- **Both page buttons together** opens touch calibration, from any screen.
+
+## Touch calibration
+
+Panels differ: the Libra Colour reports finger and stylus on one device,
+with its X axis running down the screen. CrossKobo works the transposition
+out from the kernel's own axis ranges, which gets most panels right, and
+*Settings → Controls → Calibrate touch* settles the rest:
+
+- Tap three marked corners - top left, top right, bottom left. The wizard
+  reads the digitiser's raw coordinates, so it works even when taps land
+  nowhere near where they are drawn.
+- Three taps and not two, because a diagonal is symmetric under
+  transposition: top-left and bottom-right cannot tell a transposed panel
+  from a mirrored one.
+- Reachable with **both page buttons together** from anywhere, so a
+  mis-mapped panel can always be fixed on the device.
+- Once calibrated, your answer is the whole mapping and CrossKobo stops
+  guessing. *Touch and stylus test* still shows where input lands.
 
 ## Software updates
 
@@ -192,6 +232,10 @@ seconds are ignored so opening a book by accident does not pollute them.
   whether a stylus and a colour panel were found, and where files live.
 
 ## Added since 0.1.0
+
+- **Hold a page-turn button while the device starts** and the stock Kobo
+  software boots instead, just for that boot. No files to place, nothing to
+  undo.
 
 - **Boot takeover**: CrossKobo owns the boot. The stock software is started
   only to inherit its environment and is then stopped, the Kobo boot

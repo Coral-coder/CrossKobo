@@ -37,6 +37,9 @@ void print_usage() {
       "  --sim[=WxH]      run headless against an in-memory framebuffer\n"
       "  --root DIR       treat DIR as the user storage root (testing)\n"
       "  --book FILE      open a book straight away\n"
+      "  --catalogues     open the OPDS catalogue list straight away\n"
+      "  --catalogue NAME open a saved catalogue by name\n"
+      "  --return-to-kobo hand back to the stock UI on exit (menu launches)\n"
       "  --keep-nickel    do not stop the stock Kobo UI (debugging over ssh)\n"
       "  --debug          verbose logging\n"
       "  --version        print the version and exit\n",
@@ -54,6 +57,9 @@ int main(int argc, char** argv) {
   bool debug = false;
   std::string root;
   std::string book;
+  bool catalogues = false;
+  std::string catalogue;
+  bool return_to_kobo = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -78,6 +84,13 @@ int main(int argc, char** argv) {
       root = argv[++i];
     } else if (arg == "--book" && i + 1 < argc) {
       book = argv[++i];
+    } else if (arg == "--catalogues") {
+      catalogues = true;
+    } else if (arg == "--catalogue" && i + 1 < argc) {
+      catalogue = argv[++i];
+      catalogues = true;
+    } else if (arg == "--return-to-kobo") {
+      return_to_kobo = true;
     } else if (arg == "--keep-nickel") {
       keep_nickel = true;
     } else if (arg == "--debug") {
@@ -120,6 +133,22 @@ int main(int argc, char** argv) {
     return kExitReturnToNickel;
   }
 
+  // Hold a page-turn button while the device starts and the stock Kobo
+  // software boots instead. The launcher's watchdog is standing by to kill
+  // nickel, so the flag has to go down before anything else happens.
+  if (!simulate && device().is_kobo) {
+    Input& input = Input::instance();
+    if (input.open() && (input.key_held(Key::PageBack) || input.key_held(Key::PageForward))) {
+      CK_LOGI("crosskobo: page button held at start-up, booting the stock UI");
+      input.close();
+      sys::allow_nickel();
+      sys::signal_ready(true);   // stop the boot hook animating
+      sys::start_nickel();
+      return kExitReturnToNickel;
+    }
+    input.close();
+  }
+
   if (!simulate && device().is_kobo && !keep_nickel) {
     // If the stock UI is up (either because the boot watchdog is disabled or
     // because CrossKobo was started by hand) take its environment before
@@ -155,9 +184,22 @@ int main(int argc, char** argv) {
   Recents::instance().load();
 
   app.push(make_home_screen());
+  if (!simulate && !settings().touch_calibrated) {
+    // Say it once, on the screen where it is least in the way: a panel
+    // nobody has calibrated is the one thing that can make the whole
+    // interface unusable, and the way out is not discoverable.
+    app.show_toast("Taps in the wrong place? Press both page buttons to calibrate.", 6000);
+  }
   if (!book.empty()) open_book(book);
+  if (catalogues) {
+    // Launched from a menu to go straight to the catalogues: open the list,
+    // or a named catalogue when one was asked for.
+    app.push(catalogue.empty() ? make_catalogue_screen() : make_catalogue_screen(catalogue));
+  }
 
   int code = app.run();
+  // A menu launch borrows the screen and gives it back.
+  if (return_to_kobo && code == 0) code = kExitReturnToNickel;
   app.shutdown();
   if (!simulate) sys::signal_ready(false);
 

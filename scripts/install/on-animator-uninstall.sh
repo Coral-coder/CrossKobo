@@ -10,6 +10,10 @@
 rm -rf /usr/local/crosskobo
 rm -f /etc/init.d/crosskobo
 rm -f /etc/rcS.d/S99crosskobo
+# The one file CrossKobo adds to the user partition: its NickelMenu entries,
+# which would otherwise point at a binary that is no longer there. Books,
+# notebooks and settings are left alone.
+rm -f /mnt/onboard/.adds/nm/crosskobo
 
 # Restore the stock animation script over ourselves.
 cat > /etc/init.d/on-animator.sh <<'STOCK'

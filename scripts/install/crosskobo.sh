@@ -80,6 +80,20 @@ if [ -d "${DATA_DIR}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 1b. NickelMenu entries, if NickelMenu is installed. The stock software's
+#     own menus cannot be extended from outside it; NickelMenu patches
+#     nickel and reads its configuration from .adds/nm, so dropping a file
+#     there is how CrossKobo, the catalogues and Shelfmark appear in the
+#     stock UI. Only ever created, never overwritten, and the uninstaller
+#     takes it away again.
+# ---------------------------------------------------------------------------
+if [ -d "${ONBOARD}/.adds/nm" ] && [ ! -e "${ONBOARD}/.adds/nm/crosskobo" ] &&
+   [ -f "${INSTALL_DIR}/nm-crosskobo" ]; then
+    cp "${INSTALL_DIR}/nm-crosskobo" "${ONBOARD}/.adds/nm/crosskobo" 2>/dev/null &&
+        log "added NickelMenu entries"
+fi
+
+# ---------------------------------------------------------------------------
 # 2. The escape hatch. Creating .crosskobo/DISABLE from a computer stops
 #    CrossKobo from starting, without uninstalling anything.
 # ---------------------------------------------------------------------------
@@ -155,7 +169,7 @@ while true; do
     echo $((crashes + 1)) > "${CRASH_FILE}"
     log "starting ${BIN}"
     cd "${INSTALL_DIR}" || exit 0
-    LIBC_FATAL_STDERR_=1 "${BIN}" >> "${LOG}" 2>&1
+    LIBC_FATAL_STDERR_=1 "${BIN}" "$@" >> "${LOG}" 2>&1
     code=$?
     log "crosskobo exited with ${code}"
     rm -f "${READY_FLAG}"

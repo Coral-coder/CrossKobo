@@ -49,6 +49,10 @@ struct InputEvent {
   Key key = Key::None;
   SwipeDir swipe = SwipeDir::None;
   int dx = 0, dy = 0;      // movement since the previous event
+  // The digitiser's own coordinates, before any transform. The calibration
+  // wizard works from these, so it can fix a mapping that is wrong without
+  // depending on that mapping being right.
+  int raw_x = -1, raw_y = -1;
   int64_t time_ms = 0;
 
   bool is_touch() const {
@@ -80,6 +84,15 @@ struct InputCaps {
 };
 InputCaps classify_caps(bool has_pen_tool, bool has_mt, bool has_abs_xy, bool has_btn_touch);
 
+// Works out how a panel is oriented from three taps, in the digitiser's own
+// coordinates: the screen's top-left, top-right and bottom-left corners, in
+// that order. Three and not two, because a diagonal is symmetric under
+// transposition - top-left and bottom-right cannot tell a transposed panel
+// from a mirrored one. Returns false when the taps are too close together
+// to say anything.
+bool derive_touch_transform(const int top_left[2], const int top_right[2],
+                            const int bottom_left[2], TouchTransform& out);
+
 class Input {
  public:
   static Input& instance();
@@ -92,6 +105,11 @@ class Input {
   void rescan();
 
   void set_touch_transform(const TouchTransform& t) { touch_tf_ = t; }
+  // Whether to apply the orientation guessed from the panel's axis ranges.
+  // On until the user calibrates, off afterwards, so a calibration is never
+  // fighting a guess.
+  void set_auto_transpose(bool on) { auto_transpose_ = on; }
+  bool auto_transpose() const { return auto_transpose_; }
   void set_pen_transform(const TouchTransform& t) { pen_tf_ = t; }
   TouchTransform touch_transform() const { return touch_tf_; }
   TouchTransform pen_transform() const { return pen_tf_; }
@@ -107,6 +125,13 @@ class Input {
   // stale taps does not fire at once.
   void drain();
   bool has_pen() const { return pen_fd_count_ > 0; }
+
+  // The state of the hardware keys right now, straight from the kernel
+  // rather than from the event stream. Used to hold a button at start-up to
+  // boot the stock software, and to avoid suspending while a key is still
+  // down - the release is itself a wake event.
+  bool key_held(Key k) const;
+  bool any_key_held() const;
 
   // Diagnostics for the calibration screen.
   std::string describe_devices() const;
@@ -137,11 +162,18 @@ class Input {
     // Coordinates seen so far in the current SYN_REPORT frame, per device.
     int pending_x = -1, pending_y = -1;
 
+    // Set when the panel's axes are transposed relative to the display -
+    // its long axis reports on X while the screen is taller than it is
+    // wide, or the other way round. Derived from the kernel's own ranges,
+    // so a device nobody has calibrated still lands the right way up.
+    bool axes_transposed = false;
+
     // True when this frame's coordinates belong to the stylus.
     bool as_pen() const { return pen && (!touch || pen_active); }
   };
 
   bool classify(Device& d);
+  void update_transposition();
   void read_device(Device& d, std::vector<InputEvent>& out);
   void map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& out_x, int& out_y) const;
   void flush_touch_gesture(std::vector<InputEvent>& out, int64_t now);
@@ -158,6 +190,7 @@ class Input {
   TouchTransform pen_tf_;
   int screen_w_ = 0, screen_h_ = 0;
   int rotation_ = 0;
+  bool auto_transpose_ = true;
 
   // Touch gesture state for the primary contact.
   bool touching_ = false;
@@ -165,6 +198,9 @@ class Input {
   bool long_press_sent_ = false;
   int start_x_ = 0, start_y_ = 0;
   int last_x_ = 0, last_y_ = 0;
+  // The last untransformed point, attached to every positioned event so the
+  // calibration wizard can work in the digitiser's own coordinates.
+  int last_raw_x_ = -1, last_raw_y_ = -1;
   int64_t start_time_ = 0;
   int active_slot_ = 0;
   int current_slot_ = 0;

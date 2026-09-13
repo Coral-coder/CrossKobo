@@ -86,6 +86,11 @@ only ever plug in to charge).
 
 Three options, in increasing order of permanence:
 
+**For one boot** — hold either page-turn button while the device starts.
+CrossKobo stands down and the stock Kobo software comes up. Nothing is
+changed, so the next restart is CrossKobo again. This is the quickest way
+back, and it needs no computer and no working touchscreen.
+
 **Just for now** — *Settings → Return to the Kobo UI*. The stock software
 starts immediately. CrossKobo comes back on the next power-on.
 
@@ -122,6 +127,10 @@ tripped.
 working. `.crosskobo/crosskobo.log` has the detail. Three failed starts in
 a row and CrossKobo writes its own `DISABLE` file and stops trying, so a
 bad build cannot lock you out.
+
+**Taps land in the wrong place.** Press **both page-turn buttons together**
+to open the calibration wizard and tap the three marked corners. It reads
+the digitiser directly, so it works even when nothing on screen can be hit.
 
 **The screen is stuck, or something is drawing over CrossKobo.** Plug the
 cable into a computer and wait about five seconds, then **press a page

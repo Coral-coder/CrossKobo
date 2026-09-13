@@ -327,6 +327,68 @@ int main(int argc, char** argv) {
   CHECK(app.depth() == 2);
   app.pop_to_root();
 
+  // The catalogue list draws its empty state, and adding one walks two
+  // keyboards; the browser itself needs a server, so it is not pushed here.
+  app.push(make_catalogue_screen());
+  app.render_now();
+  CHECK(app.depth() == 2);
+  app.pop();
+
+  // Touch calibration. The wizard derives the mapping from three taps in
+  // the panel's own coordinates, which is the only thing that works when
+  // taps land nowhere near where they are drawn.
+  {
+    const int kW = 1264, kH = 1680;
+    // A panel like the Libra Colour's: its X axis runs down the screen and
+    // its Y axis runs right to left.
+    auto to_raw = [&](int sx, int sy, int out[2]) {
+      out[0] = sy;
+      out[1] = kW - sx;
+    };
+    int tl[2], tr[2], bl[2];
+    to_raw(0, 0, tl);
+    to_raw(kW - 1, 0, tr);
+    to_raw(0, kH - 1, bl);
+    TouchTransform tf;
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(tf.swap_xy);
+    CHECK(tf.mirror_x);
+    CHECK(!tf.mirror_y);
+
+    // A panel that needs nothing done to it.
+    auto identity = [&](int sx, int sy, int out[2]) {
+      out[0] = sx;
+      out[1] = sy;
+    };
+    identity(0, 0, tl);
+    identity(kW - 1, 0, tr);
+    identity(0, kH - 1, bl);
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(!tf.swap_xy && !tf.mirror_x && !tf.mirror_y);
+
+    // And one mounted upside down.
+    auto rotated = [&](int sx, int sy, int out[2]) {
+      out[0] = kW - sx;
+      out[1] = kH - sy;
+    };
+    rotated(0, 0, tl);
+    rotated(kW - 1, 0, tr);
+    rotated(0, kH - 1, bl);
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(!tf.swap_xy && tf.mirror_x && tf.mirror_y);
+
+    // Three taps in the same place say nothing.
+    int same[2] = {100, 100};
+    CHECK(!derive_touch_transform(same, same, same, tf));
+  }
+
+  // The wizard itself draws, and both page buttons together reach it.
+  app.pop_to_root();
+  app.push(make_touch_wizard());
+  app.render_now();
+  CHECK(app.depth() == 2);
+  app.pop();
+
   // Device classification. The Libra Colour's panel reports a stylus tool
   // AND multitouch on one node; classifying it as a digitiser alone is what
   // left finger taps landing on stale coordinates.

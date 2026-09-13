@@ -55,6 +55,8 @@ if command -v arm-linux-gnueabihf-strip >/dev/null 2>&1; then
 fi
 install -m 755 scripts/install/crosskobo.sh "${PAYLOAD}/usr/local/crosskobo/crosskobo.sh"
 install -m 755 scripts/install/start-nickel.sh "${PAYLOAD}/usr/local/crosskobo/start-nickel.sh"
+install -m 755 scripts/install/menu-launch.sh "${PAYLOAD}/usr/local/crosskobo/menu-launch.sh"
+install -m 644 scripts/install/nm-crosskobo "${PAYLOAD}/usr/local/crosskobo/nm-crosskobo"
 # SemiBold would only duplicate the bold slot, so it is left out of the
 # package to keep the payload small.
 for f in assets/fonts/*.ttf; do

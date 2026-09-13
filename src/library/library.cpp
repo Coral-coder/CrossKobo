@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "app/app.h"
+#include "app/home.h"
 #include "app/settings.h"
 #include "core/clock.h"
 #include "core/fs.h"
@@ -25,6 +26,7 @@ namespace {
 constexpr int kActionSort = -2001;
 constexpr int kActionSearch = -2002;
 constexpr int kActionUp = -2003;
+constexpr int kActionCatalogues = -2004;
 
 // Directories that belong to the stock firmware or to CrossKobo itself and
 // only get in the way when browsing for something to read.
@@ -157,6 +159,7 @@ class LibraryScreen : public ListView {
     if (!at_root) actions.emplace_back("Up", kActionUp);
     actions.emplace_back(sort_label(), kActionSort);
     actions.emplace_back(filter_.empty() ? "Search" : "Clear", kActionSearch);
+    if (at_root) actions.emplace_back("Catalogues", kActionCatalogues);
     set_actions(std::move(actions));
     set_status_line(format("%zu item%s", entries_.size(), entries_.size() == 1 ? "" : "s"));
   }
@@ -169,6 +172,10 @@ class LibraryScreen : public ListView {
   }
 
   void activate(int id) {
+    if (id == kActionCatalogues) {
+      App::instance().push(make_catalogue_screen());
+      return;
+    }
     if (id == kActionUp) {
       dir_ = fs::dirname(dir_);
       filter_.clear();

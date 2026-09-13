@@ -35,6 +35,9 @@ class View {
   // owns the whole surface - the note canvas, where a finger draws - opts
   // out so a stroke that starts at an edge is not stolen.
   virtual bool edge_gestures() const { return true; }
+  // A short name for views the shell has to recognise - only the touch
+  // calibration wizard so far, which must not stack on top of itself.
+  virtual const char* kind() const { return ""; }
 };
 
 using ViewPtr = std::unique_ptr<View>;

@@ -327,7 +327,7 @@ void push_power_settings() {
 }
 
 void push_controls_settings() {
-  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kShareNow, kCalibrate };
+  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kShareNow, kCalibrate, kWizard };
   auto build = []() {
     Settings& s = settings();
     std::vector<ListView::Item> items;
@@ -347,13 +347,18 @@ void push_controls_settings() {
                         UsbMs::instance().blocker().empty()
                             ? "Needs the cable plugged in"
                             : UsbMs::instance().blocker()));
+    items.push_back(row(kWizard, "Calibrate touch",
+                        settings().touch_calibrated ? "Calibrated" : "Automatic",
+                        "Tap three corners; works even when taps land in the wrong "
+                        "place. Both page buttons together opens this from anywhere."));
     items.push_back(row(kCalibrate, "Touch and stylus test",
-                        "", "Check where taps land and fix mirrored axes"));
+                        "", "Check where taps land, and the stylus axes"));
     return items;
   };
   auto handler = [](int id, DynamicList& list) {
     Settings& s = settings();
     switch (id) {
+      case kWizard: App::instance().push(make_touch_wizard()); break;
       case kSwap: s.buttons_swapped = !s.buttons_swapped; break;
       case kFollow: s.buttons_follow_rotation = !s.buttons_follow_rotation; break;
       case kTapZones: s.tap_zones = (TapZones)(((int)s.tap_zones + 1) % 3); break;
@@ -513,6 +518,7 @@ ViewPtr make_settings_screen() {
     kPower,
     kControls,
     kLibrary,
+    kCatalogues,
     kNetwork,
     kAbout,
     kUpdate,
@@ -528,6 +534,11 @@ ViewPtr make_settings_screen() {
   items.push_back(row(kPower, "Power and sleep"));
   items.push_back(row(kControls, "Controls"));
   items.push_back(row(kLibrary, "Library"));
+  items.push_back(row(kCatalogues, "Catalogues",
+                      settings().catalogues.empty()
+                          ? ""
+                          : format("%zu saved", settings().catalogues.size()),
+                      "Browse an OPDS library over Wi-Fi and download books"));
   {
     Net& net = Net::instance();
     net.refresh_status();
@@ -555,6 +566,7 @@ ViewPtr make_settings_screen() {
       case kPower: push_power_settings(); break;
       case kControls: push_controls_settings(); break;
       case kLibrary: push_library_settings(); break;
+      case kCatalogues: App::instance().push(make_catalogue_screen()); break;
       case kNetwork: App::instance().push(make_network_screen()); break;
       case kAbout: App::instance().push(make_about_screen()); break;
       case kRestart:

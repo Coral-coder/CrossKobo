@@ -66,6 +66,20 @@ Json Settings::to_json() const {
   j["statusBarTitle"] = Json(status_bar_title);
   j["statusBarClock"] = Json(status_bar_clock);
   j["autoUpdateCheck"] = Json(auto_update_check);
+  j["touchCalibrated"] = Json(touch_calibrated);
+  {
+    Json list = Json::array();
+    for (const Catalogue& c : catalogues) {
+      Json entry = Json::object();
+      entry["name"] = Json(c.name);
+      entry["url"] = Json(c.url);
+      if (!c.user.empty()) entry["user"] = Json(c.user);
+      if (!c.password.empty()) entry["password"] = Json(c.password);
+      list.push_back(entry);
+    }
+    j["catalogues"] = list;
+    j["catalogueFolder"] = Json(catalogue_folder);
+  }
   j["statusBarBattery"] = Json(status_bar_battery);
   j["statusBarProgressBar"] = Json(status_bar_progress_bar);
   j["statusBarProgressBarThickness"] = Json(status_bar_progress_thickness);
@@ -137,6 +151,19 @@ void Settings::from_json(const Json& j) {
   status_bar_title = j.get_bool("statusBarTitle", status_bar_title);
   status_bar_clock = j.get_bool("statusBarClock", status_bar_clock);
   auto_update_check = j.get_bool("autoUpdateCheck", auto_update_check);
+  touch_calibrated = j.get_bool("touchCalibrated", touch_calibrated);
+  catalogue_folder = j.get_string("catalogueFolder", catalogue_folder);
+  if (const Json* list = j.find("catalogues")) {
+    catalogues.clear();
+    for (const Json& entry : list->items()) {
+      Catalogue c;
+      c.name = entry.get_string("name");
+      c.url = entry.get_string("url");
+      c.user = entry.get_string("user");
+      c.password = entry.get_string("password");
+      if (!c.url.empty()) catalogues.push_back(c);
+    }
+  }
   status_bar_battery = j.get_bool("statusBarBattery", status_bar_battery);
   status_bar_progress_bar = j.get_bool("statusBarProgressBar", status_bar_progress_bar);
   status_bar_progress_thickness =
@@ -191,14 +218,21 @@ void Settings::from_json(const Json& j) {
   log_debug = j.get_bool("logDebug", log_debug);
 }
 
+void Settings::apply_touch_defaults() {
+  const DeviceInfo& dev = device();
+  touch_transform = TouchTransform();
+  // A starting guess only. The panel's transposition is worked out from the
+  // kernel's own axis ranges, so this is just which way each axis runs;
+  // "Calibrate touch" settles it properly in three taps, and once it has,
+  // this is never applied again.
+  if (dev.codename.find("monza") != std::string::npos) {
+    touch_transform.mirror_x = true;
+  }
+}
+
 void Settings::apply_device_defaults() {
   const DeviceInfo& dev = device();
-  // The Libra Colour's touch panel reports Y inverted relative to the
-  // display; other models differ, and the calibration screen exists for
-  // the ones nobody has checked.
-  if (dev.codename.find("monza") != std::string::npos) {
-    touch_transform.mirror_y = true;
-  }
+  apply_touch_defaults();
   if (!dev.has_frontlight) frontlight_on = false;
 }
 
@@ -211,6 +245,9 @@ void Settings::load() {
     return;
   }
   from_json(j);
+  // Until the user has calibrated, the touch transform is ours to guess -
+  // and an earlier build's guess should not outlive it.
+  if (!touch_calibrated) apply_touch_defaults();
   CK_LOGI("settings: loaded from %s", paths().settings_file().c_str());
 }
 

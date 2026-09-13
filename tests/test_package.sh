@@ -180,11 +180,16 @@ grep -q 'S99crosskobo' "${WORK}/unroot/etc/init.d/on-animator.sh"
 check $? "uninstaller removes the firmware 5 hook"
 grep -q 'pickel showpic' "${WORK}/unroot/etc/init.d/on-animator.sh"
 check $? "uninstaller restores the stock animation"
-if grep -E '^[^#]*(rm|mv|dd|mkfs)[^#]*/mnt/' "${WORK}/unroot/etc/init.d/on-animator.sh" \
-        >/dev/null 2>&1; then
-    check 1 "uninstaller does not delete anything under /mnt"
+# The uninstaller may touch exactly one path on the user partition: the
+# NickelMenu entry CrossKobo created, which would otherwise point at a
+# binary that is gone. Anything else under /mnt - and any recursive or
+# wildcard delete - is a bug that could take someone's books with it.
+if grep -E '^[^#]*(rm|mv|dd|mkfs)[^#]*/mnt/' \
+        "${WORK}/unroot/etc/init.d/on-animator.sh" |
+        grep -vqx 'rm -f /mnt/onboard/.adds/nm/crosskobo'; then
+    check 1 "uninstaller does not delete anything else under /mnt"
 else
-    check 0 "uninstaller does not delete anything under /mnt"
+    check 0 "uninstaller does not delete anything else under /mnt"
 fi
 
 # ---------------------------------------------------------------------------

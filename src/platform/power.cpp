@@ -1,6 +1,8 @@
 #include "platform/power.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <unistd.h>
@@ -10,6 +12,7 @@
 #include "core/log.h"
 #include "core/str.h"
 #include "platform/device.h"
+#include "platform/input.h"
 
 namespace ck {
 
@@ -125,6 +128,15 @@ bool Power::suspend() {
     return false;
   }
   CK_LOGI("power: suspending");
+
+  // Let the keys come up first. The release of the power button is itself a
+  // wake event, so suspending while it is still in flight turns the sleep
+  // into an instant resume - which is exactly what the device did before
+  // this: every suspend came back after two or three seconds.
+  Input& input = Input::instance();
+  for (int i = 0; i < 40 && input.any_key_held(); ++i) sleep_ms(50);
+  input.drain();
+
   if (!write_sysfs("/sys/power/state-extended", "1")) {
     CK_LOGW("power: kernel refused state-extended, not suspending");
     return false;
@@ -133,8 +145,44 @@ bool Power::suspend() {
   // flag is known to wedge some boards.
   sleep_ms(2000);
   sync();
-  bool ok = write_sysfs("/sys/power/state", "mem");
-  // Execution resumes here after wake-up.
+
+  bool ok = false;
+  int64_t slept_ms = 0;
+  for (int attempt = 0; attempt < 3 && !ok; ++attempt) {
+    // The wakeup_count protocol: hand the kernel the count we last saw and
+    // it refuses the suspend if anything has happened since. Without this a
+    // pending event is not an error, it is an immediate wake.
+    std::string count;
+    if (fs::read_file("/sys/power/wakeup_count", count)) {
+      count = trim(count);
+      if (!count.empty() && !write_sysfs("/sys/power/wakeup_count", count)) {
+        CK_LOGI("power: wake event pending at count %s, retrying", count.c_str());
+        sleep_ms(250);
+        continue;
+      }
+    }
+    // "mem" is what every Kobo generation has used; "freeze" is the
+    // fallback for a kernel built without suspend-to-RAM.
+    const char* kStates[] = {"mem", "freeze"};
+    for (const char* state : kStates) {
+      int64_t before = now_ms();
+      errno = 0;
+      if (write_sysfs("/sys/power/state", state)) {
+        // Execution resumes here after wake-up.
+        slept_ms = now_ms() - before;
+        CK_LOGI("power: back from %s after %lld ms", state, (long long)slept_ms);
+        ok = true;
+        break;
+      }
+      CK_LOGW("power: /sys/power/state=%s refused (%s)", state, strerror(errno));
+    }
+  }
+  if (ok && slept_ms < 1000) {
+    // The write returned at once: something woke the device straight away,
+    // or the kernel never froze. Worth saying so, because it looks to the
+    // user like sleep simply does not work.
+    CK_LOGW("power: the kernel returned from suspend immediately");
+  }
   sleep_ms(100);
   write_sysfs("/sys/power/state-extended", "0");
   CK_LOGI("power: resumed");

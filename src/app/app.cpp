@@ -74,6 +74,7 @@ bool App::init(bool simulate, int sim_width, int sim_height) {
     input.set_screen_size(screen.width(), screen.height());
     input.set_touch_transform(settings().touch_transform);
     input.set_pen_transform(settings().pen_transform);
+    input.set_auto_transpose(!settings().touch_calibrated);
     input.set_rotation(settings().rotation);
     input.open();
   }
@@ -94,6 +95,7 @@ void App::apply_settings() {
   Input::instance().set_rotation(s.rotation);
   Input::instance().set_touch_transform(s.touch_transform);
   Input::instance().set_pen_transform(s.pen_transform);
+  Input::instance().set_auto_transpose(!s.touch_calibrated);
 
   Power& power = Power::instance();
   if (power.has_frontlight()) {
@@ -501,6 +503,19 @@ void App::handle_global(const InputEvent& event) {
         push(make_quick_panel());
         return;
       }
+    }
+  }
+  // Both page buttons together opens touch calibration. It is the one
+  // screen that has to be reachable when taps land nowhere near where they
+  // are drawn, and the page buttons are the only input that cannot be
+  // mis-calibrated.
+  if (event.type == EventType::KeyDown &&
+      (event.key == Key::PageForward || event.key == Key::PageBack)) {
+    Key other = event.key == Key::PageForward ? Key::PageBack : Key::PageForward;
+    if (Input::instance().key_held(other)) {
+      View* view = top();
+      if (!view || std::string(view->kind()) != "touch-wizard") push(make_touch_wizard());
+      return;
     }
   }
   if (event.type == EventType::KeyDown && event.key == Key::Power) {

@@ -1,11 +1,13 @@
 #include "platform/input.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "core/clock.h"
@@ -55,6 +57,47 @@ Input& Input::instance() {
 void Input::set_screen_size(int w, int h) {
   screen_w_ = w;
   screen_h_ = h;
+  update_transposition();
+}
+
+void Input::update_transposition() {
+  if (screen_w_ <= 0 || screen_h_ <= 0) return;
+  bool screen_landscape = screen_w_ > screen_h_;
+  for (Device& d : devices_) {
+    if (!d.touch && !d.pen) continue;
+    int span_x = d.max_x - d.min_x;
+    int span_y = d.max_y - d.min_y;
+    if (span_x <= 0 || span_y <= 0 || span_x == span_y) continue;
+    bool panel_landscape = span_x > span_y;
+    bool transposed = panel_landscape != screen_landscape;
+    if (transposed != d.axes_transposed) {
+      d.axes_transposed = transposed;
+      CK_LOGI("input: %s axes %s (panel %dx%d, screen %dx%d)", d.name.c_str(),
+              transposed ? "transposed" : "aligned", span_x, span_y, screen_w_, screen_h_);
+    }
+  }
+}
+
+bool derive_touch_transform(const int top_left[2], const int top_right[2],
+                            const int bottom_left[2], TouchTransform& out) {
+  const int across_x = top_right[0] - top_left[0];
+  const int across_y = top_right[1] - top_left[1];
+  const int down_x = bottom_left[0] - top_left[0];
+  const int down_y = bottom_left[1] - top_left[1];
+  // Each pair of taps must actually move along one screen axis.
+  if (std::abs(across_x) < 40 && std::abs(across_y) < 40) return false;
+  if (std::abs(down_x) < 40 && std::abs(down_y) < 40) return false;
+
+  TouchTransform tf;
+  // The second tap moves along the screen's X axis only, so whichever raw
+  // axis moved with it is the one carrying screen X.
+  const bool raw_x_is_screen_x = std::abs(across_x) > std::abs(across_y);
+  tf.swap_xy = !raw_x_is_screen_x;
+  // And the sign of that movement says which way that axis runs.
+  tf.mirror_x = (raw_x_is_screen_x ? across_x : across_y) < 0;
+  tf.mirror_y = (raw_x_is_screen_x ? down_y : down_x) < 0;
+  out = tf;
+  return true;
 }
 
 InputCaps classify_caps(bool has_pen_tool, bool has_mt, bool has_abs_xy, bool has_btn_touch) {
@@ -195,6 +238,10 @@ void Input::map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& o
   float nx = span_x ? (float)(raw_x - min_x) / (float)span_x : 0.0f;
   float ny = span_y ? (float)(raw_y - min_y) / (float)span_y : 0.0f;
 
+  // Geometry first: a panel whose long axis is the screen's short one is
+  // transposed whatever the user has calibrated, and getting this from the
+  // kernel's ranges is more reliable than a table of model names.
+  if (d.axes_transposed && auto_transpose_) std::swap(nx, ny);
   if (tf.swap_xy) std::swap(nx, ny);
   if (tf.mirror_x) nx = 1.0f - nx;
   if (tf.mirror_y) ny = 1.0f - ny;
@@ -266,6 +313,7 @@ void Input::flush_touch_gesture(std::vector<InputEvent>& out, int64_t now) {
 }
 
 void Input::read_device(Device& d, std::vector<InputEvent>& out) {
+  const size_t first_new = out.size();
   struct input_event evs[64];
   ssize_t n;
   int& raw_x = d.pending_x;  // pending values within one SYN frame
@@ -409,6 +457,8 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
         int mx = 0, my = 0;
         bool as_pen = d.as_pen();
         map_point(d, raw_x < 0 ? 0 : raw_x, raw_y < 0 ? 0 : raw_y, as_pen, mx, my);
+        last_raw_x_ = raw_x;
+        last_raw_y_ = raw_y;
         if (as_pen) {
           pen_x_ = mx;
           pen_y_ = my;
@@ -447,6 +497,14 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
         }
         raw_x = raw_y = -1;
       }
+    }
+  }
+  // Attach the digitiser's own coordinates to everything positioned in this
+  // batch: the calibration wizard needs them, and nothing else looks.
+  for (size_t i = first_new; i < out.size(); ++i) {
+    if (out[i].is_touch() || out[i].is_pen()) {
+      out[i].raw_x = last_raw_x_;
+      out[i].raw_y = last_raw_y_;
     }
   }
 }
@@ -514,6 +572,24 @@ InputEvent Input::next(int timeout_ms) {
     }
   }
 }
+
+bool Input::key_held(Key k) const {
+  // EVIOCGKEY returns a bitmap of every key the device currently holds.
+  for (const Device& d : devices_) {
+    if (!d.keys || d.fd < 0) continue;
+    unsigned long bits[(KEY_MAX + 8 * sizeof(long)) / (8 * sizeof(long))] = {0};
+    if (ioctl(d.fd, EVIOCGKEY(sizeof(bits)), bits) < 0) continue;
+    for (int code = 0; code <= KEY_MAX; ++code) {
+      if (!test_bit(bits, code)) continue;
+      Key held = key_from_code(code);
+      if (held == Key::None) continue;
+      if (k == Key::None || held == k) return true;
+    }
+  }
+  return false;
+}
+
+bool Input::any_key_held() const { return key_held(Key::None); }
 
 void Input::drain() {
   std::vector<InputEvent> scratch;

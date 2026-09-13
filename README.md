@@ -8,15 +8,15 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.4, running on a Kobo Libra Colour.**
-> 0.1.2 and 0.1.3 were tested on real hardware and the defects they turned
-> up are fixed here: the boot animation that repainted over the interface,
-> the combined touch-and-stylus panel that left taps landing in the wrong
-> place, the handover to the stock software that undid itself, the blinking
-> boot LED, and a colour page that refreshed itself once a minute. Read
-> [docs/INSTALL.md](docs/INSTALL.md) before installing, especially the
-> recovery section. The installer is reversible and carries an escape
-> hatch, a crash-loop guard, and an uninstaller.
+> **Status: version 0.1.5, running on a Kobo Libra Colour.**
+> Each release so far has been tested on real hardware and fixed what that
+> turned up: the boot animation that repainted over the interface, a
+> combined touch-and-stylus panel that broke taps, a transposed touch axis,
+> sleep that woke straight back up, a blinking boot LED, a colour page that
+> refreshed once a minute, and a handover to the stock software that undid
+> itself. Read [docs/INSTALL.md](docs/INSTALL.md) before installing,
+> especially the recovery section: holding a page-turn button while the
+> device starts boots the stock software, and the installer is reversible.
 
 ## What it is, and what it is not
 
@@ -76,7 +76,7 @@ Full list: [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Install
 
-Download `CrossKobo-0.1.4-install.zip` from the
+Download `CrossKobo-0.1.5-install.zip` from the
 [latest release](https://github.com/Coral-coder/CrossKobo/releases/latest),
 unpack it to the root of the Kobo's USB drive, and eject. The device
 installs CrossKobo and restarts by itself. (Firmware 5.x devices want the
