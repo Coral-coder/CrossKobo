@@ -8,6 +8,7 @@ namespace ck {
 // ------------------------------------------------------------------ strings
 std::string trim(const std::string& s);
 std::string to_lower(const std::string& s);
+std::string to_upper(const std::string& s);
 bool starts_with(const std::string& s, const std::string& prefix);
 bool ends_with(const std::string& s, const std::string& suffix);
 bool iequals(const std::string& a, const std::string& b);

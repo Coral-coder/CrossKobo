@@ -16,6 +16,7 @@
 #include "library/library.h"
 #include "net/http.h"
 #include "net/discover.h"
+#include "net/libgen.h"
 #include "net/opds.h"
 #include "platform/net.h"
 #include "ui/keyboard.h"
@@ -23,6 +24,11 @@
 #include "ui/theme.h"
 
 namespace ck {
+
+// Opens a saved catalogue with whichever client its format needs; defined
+// below, once both browsers exist.
+ViewPtr open_catalogue(const Settings::Catalogue& c);
+
 namespace {
 
 enum BrowseId {
@@ -186,6 +192,133 @@ class OpdsBrowser : public ListView {
   bool loaded_ = false;
 };
 
+// A search-format source: a server that answers queries rather than
+// offering a feed to walk. One search at a time, because that is what the
+// format is - there is nothing to browse between searches.
+class SearchSourceBrowser : public ListView {
+ public:
+  SearchSourceBrowser(std::string title, const Settings::Catalogue& source)
+      : ListView(std::move(title), {}, nullptr), source_(source) {
+    set_empty_message("Nothing found. Try different words.");
+    on_select_ = [this](int id) { activate(id); };
+  }
+
+  void on_show() override {
+    if (!asked_) {
+      asked_ = true;
+      ask();
+    }
+  }
+
+ private:
+  enum { kNewSearch = -30 };
+
+  void ask() {
+    Settings::Catalogue source = source_;
+    SearchSourceBrowser* self = this;
+    App::instance().push(ViewPtr(new KeyboardView(
+        "Search " + (source.name.empty() ? std::string("this server") : source.name), query_,
+        [self](const std::string& text, bool ok) {
+          App::instance().pop();
+          if (!ok || trim(text).empty()) {
+            // Nothing typed and nothing to show: leave rather than sit on an
+            // empty list.
+            if (self->results_.empty()) App::instance().pop();
+            return;
+          }
+          self->run_search(trim(text));
+        })));
+  }
+
+  void run_search(const std::string& query) {
+    App& app = App::instance();
+    if (!Net::instance().connected()) {
+      app.show_message("Search", "Connect to Wi-Fi first: Settings has a Wi-Fi entry.");
+      return;
+    }
+    query_ = query;
+    set_title(query);
+    set_status_line("Searching…");
+    app.render_now();
+
+    std::string error;
+    results_.clear();
+    if (!libgen_search(source_.search_address(), query, results_, error)) {
+      set_status_line("");
+      app.show_message("Search", error);
+      rebuild();
+      return;
+    }
+    rebuild();
+    app.invalidate(Refresh::Text);
+  }
+
+  void rebuild() {
+    std::vector<Item> items;
+    for (size_t i = 0; i < results_.size(); ++i) {
+      const SearchResult& r = results_[i];
+      Item item;
+      item.id = kEntryBase + (int)i;
+      item.row.title = r.title.empty() ? "(untitled)" : r.title;
+      std::string detail = r.author;
+      if (!r.year.empty()) detail += detail.empty() ? r.year : " \xc2\xb7 " + r.year;
+      item.row.subtitle = detail;
+      std::string trailing = to_upper(r.extension);
+      if (!r.size_text.empty()) {
+        trailing += trailing.empty() ? r.size_text : " \xc2\xb7 " + r.size_text;
+      }
+      item.row.trailing = trailing;
+      items.push_back(item);
+    }
+    set_actions({{"New search", kNewSearch}});
+    set_status_line(query_.empty() ? "" : format("%zu result%s for \"%s\"", results_.size(),
+                                                 results_.size() == 1 ? "" : "s",
+                                                 query_.c_str()));
+    set_items(std::move(items));
+  }
+
+  void activate(int id) {
+    if (id == kNewSearch) {
+      ask();
+      return;
+    }
+    size_t index = (size_t)(id - kEntryBase);
+    if (index >= results_.size()) return;
+    const SearchResult& r = results_[index];
+    App& app = App::instance();
+    std::string details;
+    if (!r.author.empty()) details += r.author + "\n";
+    if (!r.year.empty()) details += r.year + "\n";
+    if (!r.extension.empty() || !r.size_text.empty()) {
+      details += to_upper(r.extension) + " " + r.size_text + "\n";
+    }
+    details += "\nSaves to " + settings().catalogue_folder + " as " + r.filename();
+    if (!app.confirm(r.title, details, "Download", "Back")) return;
+
+    set_status_line("Downloading…");
+    app.render_now();
+    std::string path;
+    std::string error;
+    if (!libgen_download(source_.search_address(), r, download_dir(), source_.user,
+                         source_.password, path, error)) {
+      set_status_line("");
+      app.show_message("Download failed", error);
+      return;
+    }
+    rebuild();
+    if (app.confirm("Downloaded", r.title + "\n\nSaved to " + settings().catalogue_folder +
+                                      ".\n\nOpen it now?",
+                    "Read", "Later")) {
+      open_book(path);
+    }
+  }
+
+  Settings::Catalogue source_;
+  std::vector<SearchResult> results_;
+  std::string query_;
+  bool asked_ = false;
+};
+
 // The saved list. Empty to start with, so it explains itself.
 class CatalogueList : public ListView {
  public:
@@ -212,7 +345,13 @@ class CatalogueList : public ListView {
       Item item;
       item.id = (int)i + 1;
       item.row.title = list[i].name.empty() ? list[i].url : list[i].name;
-      item.row.subtitle = list[i].search_only() ? "Search: " + list[i].search : list[i].url;
+      if (list[i].is_libgen()) {
+        item.row.subtitle = "Search source \xc2\xb7 " + list[i].url;
+      } else if (list[i].search_only()) {
+        item.row.subtitle = "Search: " + list[i].search;
+      } else {
+        item.row.subtitle = list[i].url;
+      }
       item.row.trailing = "›";
       items.push_back(item);
     }
@@ -233,7 +372,7 @@ class CatalogueList : public ListView {
     const std::vector<Settings::Catalogue>& list = settings().catalogues;
     if (index >= list.size()) return;
     const Settings::Catalogue& c = list[index];
-    App::instance().push(ViewPtr(new OpdsBrowser(c.name, c.url, c)));
+    App::instance().push(open_catalogue(c));
   }
 
   // Sweeps the local network for an OPDS feed. Modal on purpose: it takes a
@@ -306,14 +445,20 @@ class CatalogueList : public ListView {
           bool is_search = url.find("{searchTerms}") != std::string::npos ||
                            url.find("{searchterms}") != std::string::npos ||
                            url.find("{query}") != std::string::npos;
+          // An address naming one of the Library Genesis-style endpoints is
+          // that format, whether or not it carries a placeholder.
+          bool is_libgen = looks_like_libgen_endpoint(url);
           // Ask for a name second: the address is the part that must be
           // right, and a name can be derived from the feed if skipped.
           App::instance().push(ViewPtr(new KeyboardView(
               "Name for this catalogue", "",
-              [url, is_search](const std::string& name, bool named) {
+              [url, is_search, is_libgen](const std::string& name, bool named) {
                 App::instance().pop();
                 Settings::Catalogue c;
-                if (is_search) {
+                if (is_libgen) {
+                  c.format = "libgen";
+                  c.url = url;
+                } else if (is_search) {
                   c.search = url;
                 } else {
                   c.url = url;
@@ -350,15 +495,19 @@ class CatalogueList : public ListView {
 
 }  // namespace
 
+// Opens a saved catalogue with whichever client its format needs.
+ViewPtr open_catalogue(const Settings::Catalogue& c) {
+  if (c.is_libgen()) return ViewPtr(new SearchSourceBrowser(c.name, c));
+  return ViewPtr(new OpdsBrowser(c.name, c.url, c));
+}
+
 ViewPtr make_catalogue_screen() { return ViewPtr(new CatalogueList()); }
 
 ViewPtr make_catalogue_screen(const std::string& name) {
   // A named catalogue opens straight into its feed; anything else falls
   // back to the list, which explains itself when it is empty.
   for (const Settings::Catalogue& c : settings().catalogues) {
-    if (icontains(c.name, name) || c.url == name) {
-      return ViewPtr(new OpdsBrowser(c.name, c.url, c));
-    }
+    if (icontains(c.name, name) || c.url == name) return open_catalogue(c);
   }
   CK_LOGW("opds: no saved catalogue matches \"%s\"", name.c_str());
   return make_catalogue_screen();

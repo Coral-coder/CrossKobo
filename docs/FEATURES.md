@@ -167,6 +167,17 @@ seconds are ignored so opening a book by accident does not pollute them.
 - Search uses the catalogue's own search link. Paged catalogues get a
   **More** button. Servers behind Basic authentication work: put `user` and
   `password` in the catalogue's entry in `.crosskobo/settings.json`.
+- **Search-format servers.** Some self-hosted catalogue software answers a
+  search rather than offering a feed - including anything forked from
+  Library Genesis, which is a common starting point because the code is
+  there to fork. Give CrossKobo the address of a server you run and it
+  searches it and downloads to the device: it reads both the JSON answer and
+  the simple HTML table, identifies the columns by what they hold rather
+  than by position (forks move them around), and follows the mirror page to
+  the file when the answer does not link to it directly. CrossKobo ships no
+  addresses for this; the format is only how it talks to the server you
+  point it at. An address naming `search.php` or `json.php` is recognised as
+  this format automatically.
 - **Your own search format.** An address with `{searchTerms}` in it is
   added as a search source rather than a feed: CrossKobo fills the
   placeholder in and reads the answer as OPDS, so a server with its own

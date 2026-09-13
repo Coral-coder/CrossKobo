@@ -111,8 +111,17 @@ struct Settings {
     // search format, or a mirror list of them, gets used as it is. A
     // catalogue with only a search opens straight into the keyboard.
     std::string search;
+    // "opds" (the default) or "libgen": the search format Library Genesis
+    // popularised, which self-hosted catalogue software often inherits by
+    // forking it. CrossKobo ships no addresses for either - the format is
+    // just how it talks to the server you point it at.
+    std::string format = "opds";
 
-    bool search_only() const { return url.empty() && !search.empty(); }
+    bool is_libgen() const { return format == "libgen"; }
+    // Nothing to browse: the catalogue is searched, not walked.
+    bool search_only() const { return is_libgen() || (url.empty() && !search.empty()); }
+    // The address a search goes to.
+    std::string search_address() const { return search.empty() ? url : search; }
   };
   std::vector<Catalogue> catalogues;
   // Seeds the public-domain catalogues, once, when the settings file has

@@ -10,6 +10,7 @@
 #include "core/fs.h"
 #include "core/log.h"
 #include "net/discover.h"
+#include "net/libgen.h"
 #include "net/opds.h"
 #include "epub/book.h"
 #include "core/str.h"
@@ -354,6 +355,91 @@ int main(int argc, char** argv) {
     CHECK(search == "https://books.example.org:8443/opds/search?q=colour%20ink");
     // A catalogue that advertises a bare endpoint still gets a query.
     CHECK(opds_search_url("https://x/opds/find", "abc") == "https://x/opds/find?q=abc");
+  }
+
+  // The search format Library Genesis popularised, which self-hosted
+  // catalogue software inherits by forking it. Every fork moves the columns
+  // around, so the parser identifies them by what they hold - and that is
+  // exactly the part worth testing.
+  {
+    const char* kMd5a = "0123456789abcdef0123456789abcdef";
+    const char* kMd5b = "fedcba9876543210fedcba9876543210";
+    std::string html =
+        "<table class='c'><tr><th>ID</th><th>Author</th><th>Title</th>"
+        "<th>Publisher</th><th>Year</th><th>Pages</th><th>Language</th>"
+        "<th>Size</th><th>Extension</th><th>Mirrors</th></tr>\n"
+        "<tr valign=top><td>1207</td><td><a href='author.php?id=9'>A. Tester</a></td>"
+        "<td width=500><a href='book/index.php?md5=" + std::string(kMd5a) +
+        "'>The Colour of Ink</a></td><td>Self</td><td>2024</td><td>312</td>"
+        "<td>English</td><td>1.4 Mb</td><td>epub</td>"
+        "<td><a href='/main/" + std::string(kMd5a) + "'>[1]</a></td></tr>\n"
+        "<tr valign=top><td>1208</td><td>B. Writer</td>"
+        "<td width=500><a href='book/index.php?md5=" + std::string(kMd5b) +
+        "'>A Short Walk</a></td><td>Self</td><td>2019</td><td>88</td>"
+        "<td>English</td><td>755 Kb</td><td>pdf</td>"
+        "<td><a href='/main/" + std::string(kMd5b) + "'>[1]</a></td></tr>\n"
+        "</table>";
+    std::vector<SearchResult> results;
+    parse_libgen_html(html, results);
+    CHECK(results.size() == 2);
+    if (results.size() == 2) {
+      CHECK(results[0].title == "The Colour of Ink");
+      CHECK(results[0].author == "A. Tester");
+      CHECK(results[0].extension == "epub");
+      CHECK(results[0].size_text == "1.4 Mb");
+      CHECK(results[0].year == "2024");
+      CHECK(results[0].md5 == kMd5a);
+      CHECK(results[0].filename() == "A. Tester - The Colour of Ink.epub");
+      CHECK(results[1].title == "A Short Walk");
+      CHECK(results[1].extension == "pdf");
+      CHECK(results[1].md5 == kMd5b);
+    }
+
+    // The JSON form, with the key case forks disagree about and a byte
+    // count rather than a written size.
+    std::string json =
+        "[{\"MD5\":\"" + std::string(kMd5a) + "\",\"Title\":\"Notes on Colour\","
+        "\"Author\":\"C. Painter\",\"Extension\":\"EPUB\",\"FileSize\":\"2097152\","
+        "\"Year\":\"2021\"}]";
+    std::vector<SearchResult> from_json;
+    CHECK(parse_libgen_json(json, from_json));
+    CHECK(from_json.size() == 1);
+    if (from_json.size() == 1) {
+      CHECK(from_json[0].title == "Notes on Colour");
+      CHECK(from_json[0].extension == "epub");
+      CHECK(from_json[0].md5 == kMd5a);
+      CHECK(from_json[0].size_text.find("2") != std::string::npos);
+    }
+    // An object wrapping the array is also seen in the wild.
+    std::vector<SearchResult> wrapped;
+    CHECK(parse_libgen_json("{\"data\":" + json + "}", wrapped));
+    CHECK(wrapped.size() == 1);
+
+    // Picking the file id out of a link, in the shapes servers use.
+    CHECK(md5_from_link("book/index.php?md5=" + std::string(kMd5a)) == kMd5a);
+    CHECK(md5_from_link("http://host/main/" + std::string(kMd5b)) == kMd5b);
+    CHECK(md5_from_link("/get.php?md5=" + std::string(kMd5a) + "&key=xyz") == kMd5a);
+    CHECK(md5_from_link("author.php?id=9").empty());
+    CHECK(md5_from_link("/main/not-a-hash").empty());
+
+    // The mirror page: the link labelled GET wins over anything else.
+    std::string page =
+        "<html><body><a href='/index.php'>Home</a>"
+        "<a href='/covers/x.jpg'>cover</a>"
+        "<h2><a href='/get.php?md5=" + std::string(kMd5a) + "&key=abc'>GET</a></h2>"
+        "<a href='/other.epub'>mirror 2</a></body></html>";
+    std::string link = direct_link_from_page(page, "http://host:8080");
+    CHECK(link == "http://host:8080/get.php?md5=" + std::string(kMd5a) + "&key=abc");
+    // With no GET link, a file-shaped one will do.
+    CHECK(direct_link_from_page("<a href='/books/x.epub'>dl</a>", "http://h") ==
+          "http://h/books/x.epub");
+    CHECK(direct_link_from_page("<a href='/about'>about</a>", "http://h").empty());
+
+    // Which addresses are this format, and which are not.
+    CHECK(looks_like_libgen_endpoint("http://host/search.php?req={searchTerms}"));
+    CHECK(looks_like_libgen_endpoint("http://host:8080/json.php"));
+    CHECK(!looks_like_libgen_endpoint("http://host/opds"));
+    CHECK(!looks_like_libgen_endpoint("https://standardebooks.org/feeds/opds"));
   }
 
   // Discovery probes a fixed set of ports and paths; a typo in either is

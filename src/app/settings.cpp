@@ -75,6 +75,7 @@ Json Settings::to_json() const {
       entry["name"] = Json(c.name);
       entry["url"] = Json(c.url);
       if (!c.search.empty()) entry["search"] = Json(c.search);
+      if (c.format != "opds") entry["format"] = Json(c.format);
       if (!c.user.empty()) entry["user"] = Json(c.user);
       if (!c.password.empty()) entry["password"] = Json(c.password);
       list.push_back(entry);
@@ -168,6 +169,7 @@ void Settings::from_json(const Json& j) {
       c.name = entry.get_string("name");
       c.url = entry.get_string("url");
       c.search = entry.get_string("search");
+      c.format = entry.get_string("format", "opds");
       c.user = entry.get_string("user");
       c.password = entry.get_string("password");
       if (!c.url.empty() || !c.search.empty()) catalogues.push_back(c);
