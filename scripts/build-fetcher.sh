@@ -102,8 +102,22 @@ cd "curl-${CURL_VERSION}"
     --without-libpsl --without-libidn2 --without-nghttp2 --without-brotli \
     --without-zstd --without-zlib --without-librtmp \
     LDFLAGS="-static" >/dev/null
-make -j"$(nproc)" >/dev/null
+# -all-static at make time, not just -static at configure time: the link
+# goes through libtool, which understands its own flag and quietly ignores
+# the compiler's. Without this the binary comes out dynamically linked
+# against the build machine's loader - which is what the emulated check
+# caught the first time this ran.
+make -j"$(nproc)" LDFLAGS="-all-static" >/dev/null
 cd "${WORK}"
+
+case "$(file -b "curl-${CURL_VERSION}/src/curl")" in
+    *"statically linked"*) ;;
+    *)
+        echo "the fetcher did not link statically:" >&2
+        file -b "curl-${CURL_VERSION}/src/curl" >&2
+        exit 1
+        ;;
+esac
 
 install -m 755 "curl-${CURL_VERSION}/src/curl" "${OUT}/curl"
 "${TRIPLE}-strip" "${OUT}/curl" 2>/dev/null || true
