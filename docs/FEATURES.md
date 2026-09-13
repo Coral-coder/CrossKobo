@@ -156,6 +156,14 @@ seconds are ignored so opening a book by accident does not pollute them.
   downloading writes straight into `Downloads` on the drive, where the
   library picks it up like anything copied over USB. EPUB is preferred when
   a catalogue offers several formats.
+- **Find on network** sweeps the local subnet for a catalogue rather than
+  making you type an address: a TCP probe of the ports these servers
+  actually use (8083 Calibre-Web, 8080 Calibre and Komga, 5000 Kavita,
+  25600 Komga, 6060 BookLore, and a few of the Docker crowd), then an OPDS
+  request to `/opds`, `/opds/v1.2/catalog`, `/api/opds`, `/opds/root.xml`
+  and `/catalog` on whatever answered. Anything that returns a feed is
+  offered by its own title. It only runs when you ask, never in the
+  background.
 - Search uses the catalogue's own search link. Paged catalogues get a
   **More** button. Servers behind Basic authentication work: put `user` and
   `password` in the catalogue's entry in `.crosskobo/settings.json`.

@@ -1,6 +1,7 @@
 // Builds a small EPUB in memory, opens it through the real Book/Layout
 // stack, paginates it and renders pages to PNG. This is the closest thing
 // to a reading smoke test that can run off-device.
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "app/settings.h"
 #include "core/fs.h"
 #include "core/log.h"
+#include "net/discover.h"
 #include "net/opds.h"
 #include "epub/book.h"
 #include "core/str.h"
@@ -352,6 +354,19 @@ int main(int argc, char** argv) {
     CHECK(search == "https://books.example.org:8443/opds/search?q=colour%20ink");
     // A catalogue that advertises a bare endpoint still gets a query.
     CHECK(opds_search_url("https://x/opds/find", "abc") == "https://x/opds/find?q=abc");
+  }
+
+  // Discovery probes a fixed set of ports and paths; a typo in either is
+  // the difference between finding a server and sweeping for nothing.
+  {
+    const std::vector<int>& ports = discovery_ports();
+    CHECK(std::find(ports.begin(), ports.end(), 8083) != ports.end());   // Calibre-Web
+    CHECK(std::find(ports.begin(), ports.end(), 5000) != ports.end());   // Kavita
+    CHECK(std::find(ports.begin(), ports.end(), 25600) != ports.end());  // Komga
+    const std::vector<std::string>& paths = discovery_paths();
+    CHECK(std::find(paths.begin(), paths.end(), "/opds") != paths.end());
+    CHECK(std::find(paths.begin(), paths.end(), "/api/opds") != paths.end());
+    for (const std::string& path : paths) CHECK(!path.empty() && path[0] == '/');
   }
 
   printf("%s\n", failures ? "FAILED" : "ok");

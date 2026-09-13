@@ -15,6 +15,7 @@
 #include "core/str.h"
 #include "library/library.h"
 #include "net/http.h"
+#include "net/discover.h"
 #include "net/opds.h"
 #include "platform/net.h"
 #include "ui/keyboard.h"
@@ -179,7 +180,7 @@ class CatalogueList : public ListView {
     set_empty_message(
         "No catalogues yet.\n\nTap \"Add\" and enter the OPDS address of your library - "
         "Shelfmark, Calibre-Web, Kavita, Komga and the public catalogues all work.");
-    set_actions({{"Add", kAdd}});
+    set_actions({{"Add", kAdd}, {"Find on network", kFind}});
     on_select_ = [this](int id) { activate(id); };
     on_long_press_ = [this](int id) { edit(id); };
     rebuild();
@@ -188,7 +189,7 @@ class CatalogueList : public ListView {
   void on_show() override { rebuild(); }
 
  private:
-  enum { kAdd = -20 };
+  enum { kAdd = -20, kFind = -21 };
 
   void rebuild() {
     std::vector<Item> items;
@@ -210,11 +211,73 @@ class CatalogueList : public ListView {
       ask_for_url();
       return;
     }
+    if (id == kFind) {
+      find_on_network();
+      return;
+    }
     size_t index = (size_t)(id - 1);
     const std::vector<Settings::Catalogue>& list = settings().catalogues;
     if (index >= list.size()) return;
     const Settings::Catalogue& c = list[index];
     App::instance().push(ViewPtr(new OpdsBrowser(c.name, c.url, c)));
+  }
+
+  // Sweeps the local network for an OPDS feed. Modal on purpose: it takes a
+  // few seconds and there is nothing useful to do on this screen meanwhile.
+  void find_on_network() {
+    App& app = App::instance();
+    if (!Net::instance().connected()) {
+      app.show_message("Find catalogues",
+                       "Connect to Wi-Fi first: Settings has a Wi-Fi entry.");
+      return;
+    }
+    set_status_line("Looking for catalogues on this network…");
+    app.render_now();
+    int last_percent = -1;
+    std::vector<DiscoveredCatalogue> found = discover_catalogues(
+        250, [&](int done, int total) {
+          int percent = total > 0 ? done * 100 / total : 100;
+          if (percent / 10 != last_percent / 10) {
+            last_percent = percent;
+            set_status_line(format("Looking for catalogues… %d%%", percent));
+            App::instance().render_now();
+          }
+          return true;
+        });
+    set_status_line("");
+    if (found.empty()) {
+      app.show_message("Find catalogues",
+                       "Nothing answered on this network.\n\nThe server has to be on the "
+                       "same network and reachable over plain http. Add it by address "
+                       "instead with \"Add\".");
+      rebuild();
+      return;
+    }
+    // Offer them one at a time: a list screen for what is usually one hit
+    // costs more than it gives.
+    int added = 0;
+    for (const DiscoveredCatalogue& hit : found) {
+      bool known = false;
+      for (const Settings::Catalogue& c : settings().catalogues) {
+        if (c.url == hit.url) known = true;
+      }
+      if (known) continue;
+      if (!app.confirm("Catalogue found", hit.name + "\n\n" + hit.url + "\n\nAdd it?",
+                       "Add", "Skip")) {
+        continue;
+      }
+      Settings::Catalogue c;
+      c.name = hit.name;
+      c.url = hit.url;
+      settings().catalogues.push_back(c);
+      ++added;
+    }
+    if (added > 0) {
+      settings().save();
+      app.show_toast(format("Added %d catalogue%s", added, added == 1 ? "" : "s"));
+    }
+    rebuild();
+    app.invalidate(Refresh::Text);
   }
 
   void ask_for_url() {
