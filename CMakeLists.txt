@@ -35,6 +35,7 @@ file(GLOB CK_SOURCES
   src/platform/*.cpp
   src/ui/*.cpp
   src/epub/*.cpp
+  src/net/*.cpp
   src/reader/*.cpp
   src/notes/*.cpp
   src/library/*.cpp
