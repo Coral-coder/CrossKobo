@@ -1,0 +1,42 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          crosskobo
+# Required-Start:    $all
+# Required-Stop:
+# Default-Start:     S
+# Default-Stop:
+# Short-Description: CrossKobo launcher
+### END INIT INFO
+#
+# CrossKobo boot hook for the Kobo firmware 5 layout, where start-up is
+# driven by /etc/rcS.d instead of a patched animation script.
+
+INSTALL_DIR="/usr/local/crosskobo"
+
+do_start() {
+    [ -x "${INSTALL_DIR}/crosskobo.sh" ] || return 0
+    # The base system exports the whole Nickel environment here.
+    if [ -r "/usr/libexec/platform/nickel-env.sh" ]; then
+        . /usr/libexec/platform/nickel-env.sh
+        unset LD_LIBRARY_PATH
+    fi
+    setsid /bin/sh "${INSTALL_DIR}/crosskobo.sh" >/dev/null 2>&1 &
+}
+
+do_stop() {
+    killall -q -TERM crosskobo 2>/dev/null
+}
+
+case "$1" in
+    start) do_start ;;
+    stop) do_stop ;;
+    restart|reload|force-reload)
+        do_stop
+        do_start
+        ;;
+    *)
+        echo "Usage: $0 start|stop|restart" >&2
+        exit 3
+        ;;
+esac
+exit 0

@@ -1,0 +1,111 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host:
+    name: host build, tests and screenshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ ninja-build
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Render every screen
+        run: ./build/crosskobo-sim --root out/sim-root --out out/sim
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: out/sim
+
+  device:
+    name: device build and packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++-arm-linux-gnueabihf qemu-user-static zip unzip shellcheck
+
+      - name: Check the installer scripts
+        run: |
+          for f in scripts/install/*.sh scripts/install/crosskobo.init scripts/package.sh; do
+            sh -n "$f"
+          done
+          shellcheck -s sh -S warning scripts/install/*.sh scripts/install/crosskobo.init \
+            scripts/package.sh
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-arm -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/kobo-armhf.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-arm -j"$(nproc)"
+
+      - name: Check the binary is a static ARM executable
+        run: |
+          file build-arm/crosskobo
+          file build-arm/crosskobo | grep -q "ARM"
+          file build-arm/crosskobo | grep -q "statically linked"
+
+      - name: Run the device binary under emulation
+        run: |
+          qemu-arm-static ./build-arm/crosskobo --version
+          qemu-arm-static ./build-arm/crosskobo-sim --root out/arm-root --out out/arm
+
+      - name: Package
+        run: scripts/package.sh
+
+      - name: Check the packages
+        run: tests/test_package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crosskobo-packages
+          path: |
+            release/*.zip
+            release/KoboRoot.tgz
+
+      - name: Publish a release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.zip
+            release/KoboRoot.tgz
+          body: |
+            CrossKobo ${{ github.ref_name }}
+
+            **Install:** unpack `CrossKobo-*-install.zip` to the root of the
+            Kobo's USB drive and eject. Firmware 5.x devices use the
+            `-fw5-install` package instead.
+
+            **Uninstall:** unpack `CrossKobo-*-uninstall.zip` the same way.
+
+            Read `docs/INSTALL.md` first, including the recovery section.
+            This build has not been tested on hardware.

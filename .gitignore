@@ -1,0 +1,11 @@
+build/
+build-*/
+out/
+release/
+*.o
+*.a
+*.tgz
+*.tar
+*.zip
+.cache/
+compile_commands.json
