@@ -135,11 +135,14 @@ If the first press does nothing, unplug, wait five seconds, plug in again
 and press the other button.
 
 **The device will not mount over USB at all.** Use the crash-loop guard on
-purpose: **force a power-off three times.** Hold the power button for about
+purpose: **force a power-off three times, each within two minutes of
+CrossKobo appearing.** Hold the power button for about
 30 seconds until the device switches off, press it to boot, let it reach
 CrossKobo, and force it off again. The launcher counts each start that
 never exited cleanly, and on the third it writes the `DISABLE` file itself
 and boots the stock software, which mounts over USB the way it always did.
+(Survive two minutes and the counter is cleared, so ordinary forced
+power-offs weeks apart never add up to this.)
 Nothing is uninstalled and nothing is lost - CrossKobo is simply switched
 off until you delete `.crosskobo/DISABLE` from the drive.
 

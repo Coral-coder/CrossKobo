@@ -36,6 +36,9 @@ struct Settings {
   int auto_page_turn_seconds = 0;    // 0 = off, else 5..120
   bool status_bar_title = true;
   bool status_bar_clock = true;
+  // Looks for a new release once a day, and only when Wi-Fi is already
+  // connected. Never turns the radio on by itself.
+  bool auto_update_check = true;
   bool status_bar_battery = true;
   bool status_bar_progress_bar = true;
   int status_bar_progress_thickness = 3;

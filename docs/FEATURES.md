@@ -147,6 +147,34 @@ session, longest session, pages per minute, time today, reading streak in
 days, reading-since date, and per-book progress. Sessions shorter than five
 seconds are ignored so opening a book by accident does not pollute them.
 
+## Getting around
+
+- **Swipe up from the bottom edge** to go back, from anywhere. There is no
+  hardware back button on these devices, and a screen that fills itself can
+  leave the chevron in the top bar easy to miss.
+- **Swipe down from the top edge** for the quick panel: front light, night
+  mode, Wi-Fi, sharing the drive over USB, and the way home or into
+  settings. The note canvas opts out of both, so a stroke that starts at an
+  edge still draws.
+- The page-turn buttons work anywhere they mean something: they open the
+  last book from the home screen, answer the USB prompt, and dismiss the
+  quick panel.
+
+## Software updates
+
+- *Settings → Software update* asks the release page for the latest
+  version, downloads the package for this device's firmware generation, and
+  stages it the way the firmware already understands: a `KoboRoot.tgz` in
+  `.kobo`, installed on the next restart. It offers to restart for you.
+- A background check runs once a day, and only when Wi-Fi is already
+  connected - CrossKobo never turns the radio on by itself. When there is
+  something new it says so in a toast, and nothing else happens until you
+  ask. Turn it off with `"autoUpdateCheck": false` in
+  `.crosskobo/settings.json`.
+- The download needs `curl` or `wget` on the device, since no TLS is linked
+  into CrossKobo. Where neither exists, the update screen says so and the
+  manual route from a computer still works.
+
 ## Controls and diagnostics
 
 - Swap page-turn buttons; buttons follow rotation.
@@ -168,6 +196,8 @@ seconds are ignored so opening a book by accident does not pollute them.
 - **Boot takeover**: CrossKobo owns the boot. The stock software is started
   only to inherit its environment and is then stopped, the Kobo boot
   animation is stopped with it, and a watchdog keeps it from coming back.
+  The indicator LED, which the firmware blinks until the stock software
+  reports itself up, is quietened too.
 - **Wi-Fi**: scan, connect, saved networks, status in the bar.
 - **USB mass storage in-app**: share the drive without leaving CrossKobo.
 - **Aero theme** and the at-a-glance tiles.

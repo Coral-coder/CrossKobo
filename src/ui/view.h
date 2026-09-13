@@ -30,6 +30,11 @@ class View {
   virtual std::string title() const { return ""; }
   // Set when the view wants the screen fully cleared before it draws.
   virtual bool opaque() const { return true; }
+  // Edge gestures (swipe up from the bottom to go back, down from the top
+  // for the quick panel) are handled before the view sees them. A view that
+  // owns the whole surface - the note canvas, where a finger draws - opts
+  // out so a stroke that starts at an edge is not stolen.
+  virtual bool edge_gestures() const { return true; }
 };
 
 using ViewPtr = std::unique_ptr<View>;

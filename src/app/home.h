@@ -12,6 +12,9 @@ ViewPtr make_network_screen();
 ViewPtr make_usb_active_screen();
 ViewPtr make_usb_prompt_screen();
 ViewPtr make_about_screen();
+// The quick panel: light, night mode, Wi-Fi and the way home, reached by a
+// swipe down from the top edge of any screen.
+ViewPtr make_quick_panel();
 // Touch and stylus diagnostics: shows where input lands and lets the user
 // correct mirrored or transposed digitisers without a computer.
 ViewPtr make_calibration_screen();

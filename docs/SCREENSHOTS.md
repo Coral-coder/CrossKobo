@@ -35,6 +35,10 @@ with the tints washed toward the ground so they keep their contrast.
 
 ![Aero theme at night](screenshots/home-aero-night.png)
 
+The quick panel, one swipe down from the top edge of any screen.
+
+![Quick panel](screenshots/quick-panel.png)
+
 ## Reading
 
 Justified text with hyphenation, the book's own CSS (here a red bold

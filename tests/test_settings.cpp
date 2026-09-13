@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "app/settings.h"
+#include "app/update.h"
 #include "core/fs.h"
 #include "core/json.h"
 #include "core/log.h"
@@ -130,6 +131,15 @@ int main() {
 
   // Point sizes must scale with panel density.
   CHECK(clamped.font_px(300) > clamped.font_px(212));
+
+  // Version comparison drives the updater: a wrong answer either nags
+  // forever or never offers anything.
+  CHECK(compare_versions("0.1.4", "0.1.3") > 0);
+  CHECK(compare_versions("0.1.3", "0.1.3") == 0);
+  CHECK(compare_versions("0.2.0", "0.10.0") < 0);
+  CHECK(compare_versions("1.0", "0.9.9") > 0);
+  CHECK(compare_versions("v0.1.4", "0.1.4") == 0);
+  CHECK(compare_versions("0.1.4-rc1", "0.1.4") == 0);
 
   printf("%s\n", failures ? "FAILED" : "ok");
   return failures ? 1 : 0;

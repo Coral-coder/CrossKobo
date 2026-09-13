@@ -212,6 +212,8 @@ int main(int argc, char** argv) {
   settings().theme = UiTheme::Aero;
   refresh_theme_from_settings(Screen::instance().dpi());
   shot("home-aero");
+  show(make_quick_panel(), "quick-panel-aero");
+  App::instance().pop();
   show(make_library_screen(root), "library-aero");
   App::instance().pop();
   show(make_settings_screen(), "settings-aero");

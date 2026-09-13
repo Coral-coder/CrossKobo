@@ -65,6 +65,19 @@ InputEvent swipe(SwipeDir dir) {
   return e;
 }
 
+// An edge swipe: `from_y` is where the finger started, which is what the
+// app tests against, so dy carries the rest.
+InputEvent edge_swipe(SwipeDir dir, int from_y, int to_y) {
+  InputEvent e;
+  e.type = EventType::Swipe;
+  e.swipe = dir;
+  e.x = kWidth / 2;
+  e.y = to_y;
+  e.dy = to_y - from_y;
+  e.time_ms = now_ms();
+  return e;
+}
+
 InputEvent pen(EventType type, int x, int y, int pressure) {
   InputEvent e;
   e.type = type;
@@ -291,6 +304,44 @@ int main(int argc, char** argv) {
   app.pump(pen(EventType::PenUp, 400, 500, 0));
   app.render_now();
   app.pop_to_root();
+
+  // Edge gestures: there is no hardware back button, so a swipe up from the
+  // bottom edge has to be the way out of any screen, and a swipe down from
+  // the top has to reach the quick panel.
+  app.pop_to_root();
+  app.push(make_library_screen(root));
+  CHECK(app.depth() == 2);
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);                       // back out of the library
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);                       // and the root stays put
+  app.pump(edge_swipe(SwipeDir::Down, 8, kHeight / 3));
+  CHECK(app.depth() == 2);                       // quick panel
+  app.render_now();
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);
+  // A swipe that starts in the middle is the view's own business: in the
+  // reader those turn pages.
+  app.push(make_library_screen(root));
+  app.pump(edge_swipe(SwipeDir::Up, kHeight / 2, kHeight / 3));
+  CHECK(app.depth() == 2);
+  app.pop_to_root();
+
+  // Device classification. The Libra Colour's panel reports a stylus tool
+  // AND multitouch on one node; classifying it as a digitiser alone is what
+  // left finger taps landing on stale coordinates.
+  {
+    InputCaps elan = classify_caps(true, true, true, true);
+    CHECK(elan.touch && elan.pen);
+    InputCaps panel = classify_caps(false, true, true, true);
+    CHECK(panel.touch && !panel.pen);
+    InputCaps wacom = classify_caps(true, false, true, false);
+    CHECK(wacom.pen && !wacom.touch);
+    InputCaps single_touch = classify_caps(false, false, true, true);
+    CHECK(single_touch.touch && !single_touch.pen);
+    InputCaps buttons = classify_caps(false, false, false, false);
+    CHECK(!buttons.touch && !buttons.pen);
+  }
 
   // Everything still standing, and the home screen still draws.
   app.render_now();

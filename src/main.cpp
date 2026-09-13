@@ -146,6 +146,9 @@ int main(int argc, char** argv) {
   if (!simulate) {
     sys::signal_ready(true);
     sys::stop_boot_animation();
+    // The firmware blinks the indicator LED until the stock software says
+    // it is up. Nothing will say that now, so quieten it ourselves.
+    Power::instance().stop_boot_led();
   }
 
   Stats::instance().load();

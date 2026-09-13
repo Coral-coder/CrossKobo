@@ -34,6 +34,10 @@ class Socket {
     hints.ai_socktype = SOCK_STREAM;
     struct addrinfo* result = nullptr;
     std::string service = format("%d", port);
+    // The shipping binary is static, so glibc's getaddrinfo cannot load its
+    // NSS modules: names resolve through /etc/hosts and plain DNS only.
+    // That covers the local network, and https goes out through the
+    // device's own curl or wget, which is dynamically linked.
     int rv = getaddrinfo(host.c_str(), service.c_str(), &hints, &result);
     if (rv != 0 || !result) {
       error = format("cannot resolve %s (%s)", host.c_str(), gai_strerror(rv));

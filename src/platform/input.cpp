@@ -57,6 +57,18 @@ void Input::set_screen_size(int w, int h) {
   screen_h_ = h;
 }
 
+InputCaps classify_caps(bool has_pen_tool, bool has_mt, bool has_abs_xy, bool has_btn_touch) {
+  // A digitiser reports a pen tool; a touch panel reports multitouch slots
+  // or a plain BTN_TOUCH with absolute axes. These are NOT exclusive: the
+  // Libra Colour's Elan panel is one device that does both, and treating it
+  // as a digitiser alone left finger taps landing on stale coordinates,
+  // which looks exactly like a dead touchscreen.
+  InputCaps caps;
+  if (has_pen_tool && has_abs_xy) caps.pen = true;
+  if (has_mt || (has_abs_xy && has_btn_touch)) caps.touch = true;
+  return caps;
+}
+
 bool Input::classify(Device& d) {
   unsigned long ev_bits[(EV_MAX + 8 * sizeof(long)) / (8 * sizeof(long))] = {0};
   if (ioctl(d.fd, EVIOCGBIT(0, sizeof(ev_bits)), ev_bits) < 0) return false;
@@ -75,13 +87,10 @@ bool Input::classify(Device& d) {
   bool has_mt = test_bit(abs_bits, ABS_MT_POSITION_X);
   bool has_abs_xy = test_bit(abs_bits, ABS_X) && test_bit(abs_bits, ABS_Y);
 
-  // A digitiser reports a pen tool; a touch panel reports multitouch slots
-  // or a plain BTN_TOUCH with absolute axes.
-  if (has_pen_tool && has_abs_xy) {
-    d.pen = true;
-  } else if (has_mt || (has_abs_xy && test_bit(key_bits, BTN_TOUCH))) {
-    d.touch = true;
-  }
+  InputCaps caps =
+      classify_caps(has_pen_tool, has_mt, has_abs_xy, test_bit(key_bits, BTN_TOUCH));
+  d.touch = caps.touch;
+  d.pen = caps.pen;
 
   if (test_bit(key_bits, KEY_POWER) || test_bit(key_bits, 193) || test_bit(key_bits, 194) ||
       test_bit(key_bits, KEY_PAGEUP) || test_bit(key_bits, KEY_PAGEDOWN) ||
@@ -93,8 +102,10 @@ bool Input::classify(Device& d) {
   }
 
   struct input_absinfo abs;
-  int ax = d.pen || !has_mt ? ABS_X : ABS_MT_POSITION_X;
-  int ay = d.pen || !has_mt ? ABS_Y : ABS_MT_POSITION_Y;
+  // Finger coordinates come from the multitouch axes when there are any;
+  // the stylus always reports on the plain ones.
+  int ax = has_mt ? ABS_MT_POSITION_X : ABS_X;
+  int ay = has_mt ? ABS_MT_POSITION_Y : ABS_Y;
   if (ioctl(d.fd, EVIOCGABS(ax), &abs) == 0) {
     d.min_x = abs.minimum;
     d.max_x = abs.maximum;
@@ -102,6 +113,20 @@ bool Input::classify(Device& d) {
   if (ioctl(d.fd, EVIOCGABS(ay), &abs) == 0) {
     d.min_y = abs.minimum;
     d.max_y = abs.maximum;
+  }
+  d.pen_min_x = d.min_x;
+  d.pen_max_x = d.max_x;
+  d.pen_min_y = d.min_y;
+  d.pen_max_y = d.max_y;
+  if (has_mt && d.pen) {
+    if (ioctl(d.fd, EVIOCGABS(ABS_X), &abs) == 0 && abs.maximum > abs.minimum) {
+      d.pen_min_x = abs.minimum;
+      d.pen_max_x = abs.maximum;
+    }
+    if (ioctl(d.fd, EVIOCGABS(ABS_Y), &abs) == 0 && abs.maximum > abs.minimum) {
+      d.pen_min_y = abs.minimum;
+      d.pen_max_y = abs.maximum;
+    }
   }
   if (ioctl(d.fd, EVIOCGABS(ABS_PRESSURE), &abs) == 0 && abs.maximum > 0) {
     d.max_pressure = abs.maximum;
@@ -157,14 +182,18 @@ void Input::close() {
 void Input::map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& out_x,
                       int& out_y) const {
   const TouchTransform& tf = is_pen ? pen_tf_ : touch_tf_;
-  int span_x = d.max_x > d.min_x ? d.max_x - d.min_x : 0;
-  int span_y = d.max_y > d.min_y ? d.max_y - d.min_y : 0;
+  int min_x = is_pen ? d.pen_min_x : d.min_x;
+  int max_x = is_pen ? d.pen_max_x : d.max_x;
+  int min_y = is_pen ? d.pen_min_y : d.min_y;
+  int max_y = is_pen ? d.pen_max_y : d.max_y;
+  int span_x = max_x > min_x ? max_x - min_x : 0;
+  int span_y = max_y > min_y ? max_y - min_y : 0;
 
   // Normalise to 0..1 in digitiser space, then place on the panel. Doing it
   // in normalised space means a digitiser with a different resolution to
   // the panel (common for stylus layers) still lands in the right place.
-  float nx = span_x ? (float)(raw_x - d.min_x) / (float)span_x : 0.0f;
-  float ny = span_y ? (float)(raw_y - d.min_y) / (float)span_y : 0.0f;
+  float nx = span_x ? (float)(raw_x - min_x) / (float)span_x : 0.0f;
+  float ny = span_y ? (float)(raw_y - min_y) / (float)span_y : 0.0f;
 
   if (tf.swap_xy) std::swap(nx, ny);
   if (tf.mirror_x) nx = 1.0f - nx;
@@ -184,6 +213,14 @@ void Input::map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& o
   int h = screen_h_ > 0 ? screen_h_ : 1;
   out_x = std::max(0, std::min(w - 1, (int)(nx * (float)w)));
   out_y = std::max(0, std::min(h - 1, (int)(ny * (float)h)));
+
+  if (map_log_left_ > 0) {
+    --map_log_left_;
+    CK_LOGI("input: %s raw %d,%d (span %dx%d) -> %d,%d [%s%s%s rot%d]",
+            is_pen ? "pen" : "touch", raw_x, raw_y, span_x, span_y, out_x, out_y,
+            tf.swap_xy ? "swap " : "", tf.mirror_x ? "mirror-x " : "",
+            tf.mirror_y ? "mirror-y" : "", rotation_);
+  }
 }
 
 void Input::flush_touch_gesture(std::vector<InputEvent>& out, int64_t now) {
@@ -242,6 +279,10 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
       if (ev.type == EV_KEY) {
         if (d.pen && (ev.code == BTN_TOOL_PEN || ev.code == BTN_TOOL_RUBBER)) {
           pen_tool_ = ev.code == BTN_TOOL_RUBBER ? Tool::Eraser : Tool::Pen;
+          // On a combined panel this is the switch between finger and
+          // stylus: the tool goes in range before it touches the glass.
+          d.pen_active = ev.value != 0;
+          if (d.pen_active) flush_touch_gesture(out, now);
           if (!ev.value && pen_down_) {
             InputEvent e;
             e.type = EventType::PenUp;
@@ -254,7 +295,7 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
           }
           continue;
         }
-        if (d.pen && ev.code == BTN_TOUCH) {
+        if (d.as_pen() && ev.code == BTN_TOUCH) {
           if (ev.value) {
             pen_down_ = true;
             InputEvent e;
@@ -277,7 +318,7 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
           }
           continue;
         }
-        if (ev.code == BTN_TOUCH && d.touch) {
+        if (ev.code == BTN_TOUCH && d.touch && !d.as_pen()) {
           if (ev.value && !touching_) {
             touching_ = true;
             moved_ = false;
@@ -320,6 +361,7 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             current_slot_ = ev.value;
             break;
           case ABS_MT_TRACKING_ID:
+            if (d.as_pen()) break;  // the stylus owns the glass right now
             if (ev.value == -1) {
               if (current_slot_ == active_slot_) flush_touch_gesture(out, now);
             } else if (!touching_ && current_slot_ >= 0) {
@@ -350,7 +392,7 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             break;
           case ABS_PRESSURE:
           case ABS_MT_PRESSURE:
-            if (d.pen) {
+            if (d.as_pen()) {
               pen_pressure_ = d.max_pressure > 0
                                   ? (int)((int64_t)ev.value * 1000 / d.max_pressure)
                                   : 500;
@@ -365,8 +407,9 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
       if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
         if (raw_x < 0 && raw_y < 0) continue;
         int mx = 0, my = 0;
-        map_point(d, raw_x < 0 ? 0 : raw_x, raw_y < 0 ? 0 : raw_y, d.pen, mx, my);
-        if (d.pen) {
+        bool as_pen = d.as_pen();
+        map_point(d, raw_x < 0 ? 0 : raw_x, raw_y < 0 ? 0 : raw_y, as_pen, mx, my);
+        if (as_pen) {
           pen_x_ = mx;
           pen_y_ = my;
           if (pen_down_) {

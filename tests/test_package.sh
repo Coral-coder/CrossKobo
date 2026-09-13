@@ -82,6 +82,7 @@ mkdir -p "${WORK}/case1/rootfs"
 cp -r "${WORK}/rootfs/usr" "${WORK}/case1/rootfs/"
 sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case1/rootfs/usr/local/crosskobo\"#" \
     -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case1/absent\"#" \
+    -e "s#^ALLOW_NICKEL_FLAG=.*#ALLOW_NICKEL_FLAG=\"${WORK}/case1/allow-nickel\"#" \
     -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case1/absent/.crosskobo\"#" \
     -e 's/while \[ ${i} -lt 120 \]/while [ ${i} -lt 2 ]/' \
     "${launcher}" > "${WORK}/case1/run.sh"
@@ -96,6 +97,7 @@ cp -r "${WORK}/rootfs/usr" "${WORK}/case2/rootfs/"
 : > "${WORK}/case2/board/.crosskobo/DISABLE"
 sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case2/rootfs/usr/local/crosskobo\"#" \
     -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case2/board\"#" \
+    -e "s#^ALLOW_NICKEL_FLAG=.*#ALLOW_NICKEL_FLAG=\"${WORK}/case2/allow-nickel\"#" \
     -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case2/board/.crosskobo\"#" \
     -e 's#grep -q " ${ONBOARD} " /proc/mounts#test -d "${ONBOARD}"#g' \
     "${launcher}" > "${WORK}/case2/run.sh"
@@ -110,6 +112,7 @@ cp -r "${WORK}/rootfs/usr" "${WORK}/case3/rootfs/"
 echo 3 > "${WORK}/case3/rootfs/usr/local/crosskobo/crash-count"
 sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case3/rootfs/usr/local/crosskobo\"#" \
     -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case3/board\"#" \
+    -e "s#^ALLOW_NICKEL_FLAG=.*#ALLOW_NICKEL_FLAG=\"${WORK}/case3/allow-nickel\"#" \
     -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case3/board/.crosskobo\"#" \
     -e 's#grep -q " ${ONBOARD} " /proc/mounts#test -d "${ONBOARD}"#g' \
     "${launcher}" > "${WORK}/case3/run.sh"
@@ -119,6 +122,29 @@ check $? "crash-loop guard exits cleanly"
 check $? "crash-loop guard writes the DISABLE flag"
 [ ! -f "${WORK}/case3/rootfs/usr/local/crosskobo/crash-count" ]
 check $? "crash-loop guard clears the counter"
+
+# 4. The handover flag: the firmware re-runs the boot hook when the stock UI
+#    starts, and the launcher must stand down rather than take the screen
+#    back, or "Return to the Kobo UI" can never complete.
+mkdir -p "${WORK}/case4/rootfs" "${WORK}/case4/board" "${WORK}/case4/tmp"
+cp -r "${WORK}/rootfs/usr" "${WORK}/case4/rootfs/"
+touch "${WORK}/case4/tmp/crosskobo-allow-nickel"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case4/rootfs/usr/local/crosskobo\"#" \
+    -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case4/board\"#" \
+    -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case4/board/.crosskobo\"#" \
+    -e "s#^ALLOW_NICKEL_FLAG=.*#ALLOW_NICKEL_FLAG=\"${WORK}/case4/tmp/crosskobo-allow-nickel\"#" \
+    -e 's#grep -q " ${ONBOARD} " /proc/mounts#test -d "${ONBOARD}"#g' \
+    "${launcher}" > "${WORK}/case4/run.sh"
+sh "${WORK}/case4/run.sh"
+check $? "stands down when the handover flag is set"
+grep -q "handover flag present" "${WORK}/case4/rootfs/usr/local/crosskobo/boot.log"
+check $? "logs why it stood down"
+[ -f "${WORK}/case4/tmp/crosskobo-allow-nickel" ]
+check $? "leaves the handover flag in place"
+
+# The boot animation must not outlive the thing it is waiting for.
+grep -q 'frames} -lt' "${WORK}/rootfs/etc/init.d/on-animator.sh"
+check $? "boot hook caps its animation loop"
 
 # ---------------------------------------------------------------------------
 echo "install zip:"

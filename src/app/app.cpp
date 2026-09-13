@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "app/settings.h"
+#include "app/update.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -361,6 +362,8 @@ void App::wake_up() {
   }
   Input::instance().rescan();
   Input::instance().set_screen_size(Screen::instance().width(), Screen::instance().height());
+  // Resuming can restart the firmware's blink pattern.
+  if (!simulated_) Power::instance().stop_boot_led();
   Input::instance().drain();
   invalidate(Refresh::Flash);
 }
@@ -475,6 +478,31 @@ void App::show_message(const std::string& title, const std::string& message) {
 }
 
 void App::handle_global(const InputEvent& event) {
+  // Edge gestures: a swipe up from the bottom goes back, a swipe down from
+  // the top opens the quick panel. There is no hardware back button on
+  // these devices, and a view that fills the screen can leave the top bar's
+  // chevron easy to miss, so this is the way out from anywhere.
+  if (event.type == EventType::Swipe) {
+    View* view = top();
+    if (view && view->edge_gestures()) {
+      Rect b = screen_bounds();
+      int start_y = event.y - event.dy;
+      int edge = std::max(48, b.h / 10);
+      if (event.swipe == SwipeDir::Up && start_y >= b.bottom() - edge) {
+        if (depth() > 1) {
+          pop();
+        } else {
+          show_toast("Home");
+        }
+        invalidate(Refresh::Text);
+        return;
+      }
+      if (event.swipe == SwipeDir::Down && start_y <= b.y + edge) {
+        push(make_quick_panel());
+        return;
+      }
+    }
+  }
   if (event.type == EventType::KeyDown && event.key == Key::Power) {
     sleep_now();
     return;
@@ -525,6 +553,13 @@ int App::run() {
   // screen, so sweep for it again over the first few seconds.
   int64_t animation_sweep_until = simulated_ ? 0 : now_ms() + 20000;
   int64_t last_animation_sweep = 0;
+  // Survive this long and the launcher's crash counter is forgiven, so
+  // forced power-offs weeks apart cannot add up to a self-disable.
+  int64_t forgive_crashes_at = simulated_ ? 0 : now_ms() + 120000;
+  // An update check, if the radio is already up, a minute after start-up so
+  // it never competes with opening a book.
+  int64_t update_check_at =
+      (simulated_ || !settings().auto_update_check) ? 0 : now_ms() + 60000;
   while (!quit_requested_) {
     // Safe point: nothing is executing inside a view any more.
     release_retired();
@@ -538,6 +573,23 @@ int App::run() {
     if (now_ms() < animation_sweep_until && now_ms() - last_animation_sweep > 2000) {
       last_animation_sweep = now_ms();
       sys::stop_boot_animation();
+    }
+    if (update_check_at && now_ms() > update_check_at) {
+      update_check_at = 0;
+      start_background_check();
+    }
+    {
+      UpdateInfo available;
+      if (take_background_result(available)) {
+        show_toast("CrossKobo " + available.version +
+                       " is available - Settings, Software update",
+                   6000);
+      }
+    }
+    if (forgive_crashes_at && now_ms() > forgive_crashes_at) {
+      forgive_crashes_at = 0;
+      sys::clear_crash_count();
+      CK_LOGI("app: two minutes up; crash counter cleared");
     }
 
     InputEvent event = Input::instance().next(timeout);

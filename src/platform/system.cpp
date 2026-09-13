@@ -61,6 +61,8 @@ void stop_boot_animation() {
   run("killall -q -KILL on-animator.sh animator.sh pickel pickel-mtk 2>/dev/null");
 }
 
+void clear_crash_count() { fs::remove_file("/usr/local/crosskobo/crash-count"); }
+
 void allow_nickel() {
   fs::write_file_atomic("/tmp/crosskobo-allow-nickel", "1\n");
   fs::remove_file("/tmp/crosskobo-ready");

@@ -71,6 +71,15 @@ struct TouchTransform {
   bool mirror_y = false;
 };
 
+// What a device's capability bits say it is. A panel can be both: the Libra
+// Colour's Elan controller reports finger contacts and a stylus on one
+// node, and treating it as only a digitiser leaves touch dead.
+struct InputCaps {
+  bool touch = false;
+  bool pen = false;
+};
+InputCaps classify_caps(bool has_pen_tool, bool has_mt, bool has_abs_xy, bool has_btn_touch);
+
 class Input {
  public:
   static Input& instance();
@@ -117,16 +126,29 @@ class Input {
     bool pen = false;
     bool keys = false;
     bool cover = false;
-    // Raw axis ranges, used to normalise to screen coordinates.
+    // The Libra Colour's Elan panel is one device for both finger and
+    // stylus, so `touch` and `pen` are not exclusive: the tool events say
+    // which one is on the glass right now.
+    bool pen_active = false;
+    // Raw axis ranges, used to normalise to screen coordinates. The stylus
+    // can report on different axes to the finger, so both are kept.
     int min_x = 0, max_x = 0, min_y = 0, max_y = 0, max_pressure = 0;
+    int pen_min_x = 0, pen_max_x = 0, pen_min_y = 0, pen_max_y = 0;
     // Coordinates seen so far in the current SYN_REPORT frame, per device.
     int pending_x = -1, pending_y = -1;
+
+    // True when this frame's coordinates belong to the stylus.
+    bool as_pen() const { return pen && (!touch || pen_active); }
   };
 
   bool classify(Device& d);
   void read_device(Device& d, std::vector<InputEvent>& out);
   void map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& out_x, int& out_y) const;
   void flush_touch_gesture(std::vector<InputEvent>& out, int64_t now);
+
+  // Logs the first few mapped points, so a device whose panel geometry
+  // nobody has checked can be diagnosed from the log alone.
+  mutable int map_log_left_ = 6;
 
   std::vector<Device> devices_;
   std::vector<InputEvent> queue_;

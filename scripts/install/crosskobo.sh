@@ -37,8 +37,20 @@ if [ -f "${LOG}" ] && [ "$(wc -c < "${LOG}" 2>/dev/null || echo 0)" -gt 262144 ]
     mv -f "${LOG}" "${LOG}.1"
 fi
 
-rm -f "${ALLOW_NICKEL_FLAG}"
 log "launcher starting (pid $$)"
+
+# ---------------------------------------------------------------------------
+# 0. Did the user ask for the stock UI? "Return to the Kobo UI" and the USB
+#    handover leave this flag behind, and it lives in /tmp, so it lasts
+#    until the next restart - which is exactly what those two promise. The
+#    firmware re-runs this hook when the stock UI starts, and without this
+#    guard CrossKobo took the screen straight back and the handover was
+#    impossible to complete.
+# ---------------------------------------------------------------------------
+if [ -f "${ALLOW_NICKEL_FLAG}" ]; then
+    log "handover flag present; leaving the stock UI running"
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Wait for the user partition. Books, settings and the escape hatch all

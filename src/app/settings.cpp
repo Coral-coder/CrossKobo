@@ -65,6 +65,7 @@ Json Settings::to_json() const {
   j["autoPageTurnSeconds"] = Json(auto_page_turn_seconds);
   j["statusBarTitle"] = Json(status_bar_title);
   j["statusBarClock"] = Json(status_bar_clock);
+  j["autoUpdateCheck"] = Json(auto_update_check);
   j["statusBarBattery"] = Json(status_bar_battery);
   j["statusBarProgressBar"] = Json(status_bar_progress_bar);
   j["statusBarProgressBarThickness"] = Json(status_bar_progress_thickness);
@@ -135,6 +136,7 @@ void Settings::from_json(const Json& j) {
   }
   status_bar_title = j.get_bool("statusBarTitle", status_bar_title);
   status_bar_clock = j.get_bool("statusBarClock", status_bar_clock);
+  auto_update_check = j.get_bool("autoUpdateCheck", auto_update_check);
   status_bar_battery = j.get_bool("statusBarBattery", status_bar_battery);
   status_bar_progress_bar = j.get_bool("statusBarProgressBar", status_bar_progress_bar);
   status_bar_progress_thickness =

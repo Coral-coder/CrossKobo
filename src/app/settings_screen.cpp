@@ -8,6 +8,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/update.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -444,6 +445,66 @@ void push_library_settings() {
 
 // ----------------------------------------------------------- settings root
 
+
+// Checks for a newer release, offers to fetch it, and stages it the way the
+// firmware expects. Blocking and modal on purpose: the screen cannot show
+// progress and stay interactive, and the whole thing takes seconds.
+void check_for_update_interactively() {
+  App& app = App::instance();
+  if (update_staged()) {
+    if (app.confirm("Update ready",
+                    "An update is already downloaded and installs the next time the "
+                    "device restarts.",
+                    "Restart now", "Later")) {
+      settings().save();
+      Screen::instance().close();
+      Power::instance().reboot();
+    }
+    return;
+  }
+  if (!Net::instance().connected()) {
+    app.show_message("Software update",
+                     "Connect to Wi-Fi first: Settings has a Wi-Fi entry.");
+    return;
+  }
+  app.show_toast("Checking for updates…", 4000);
+  app.render_now();
+
+  UpdateInfo info;
+  std::string error;
+  if (!check_for_update(info, error)) {
+    app.show_message("Software update", error);
+    return;
+  }
+  if (!info.newer) {
+    app.show_message("Software update",
+                     format("CrossKobo %s is the latest version.", kVersion));
+    return;
+  }
+  std::string message = format("CrossKobo %s is available.\n\nYou have %s.\n\n%s\n\n%s",
+                               info.version.c_str(), kVersion,
+                               info.size > 0 ? human_size((uint64_t)info.size).c_str() : "",
+                               info.notes.c_str());
+  if (!app.confirm("Update available", message, "Download", "Not now")) return;
+
+  app.show_toast("Downloading " + info.version + "…", 60000);
+  app.render_now();
+  if (!stage_update(info, error)) {
+    app.show_message("Update failed", error);
+    return;
+  }
+  app.clear_toast();
+  if (app.confirm("Update downloaded",
+                  format("CrossKobo %s installs when the device restarts.\n\nYour books, "
+                         "notebooks and settings are untouched.",
+                         info.version.c_str()),
+                  "Restart now", "Later")) {
+    settings().save();
+    Screen::instance().close();
+    Power::instance().reboot();
+  }
+}
+
 ViewPtr make_settings_screen() {
   enum {
     kReading = 1,
@@ -454,6 +515,7 @@ ViewPtr make_settings_screen() {
     kLibrary,
     kNetwork,
     kAbout,
+    kUpdate,
     kReturnToKobo,
     kRestart,
   };
@@ -475,7 +537,12 @@ ViewPtr make_settings_screen() {
                         net.connected() ? net.status_text() : ""));
   }
   items.push_back(section("System"));
-  items.push_back(row(kAbout, "About CrossKobo"));
+  items.push_back(row(kAbout, "About CrossKobo", kVersion));
+  items.push_back(row(kUpdate, "Software update",
+                      update_staged() ? "Waiting for a restart" : "",
+                      update_staged()
+                          ? "An update is staged and installs on the next restart"
+                          : "Checks the release page over Wi-Fi"));
   items.push_back(row(kRestart, "Restart CrossKobo"));
   items.push_back(row(kReturnToKobo, "Return to the Kobo UI", "",
                       "Starts the stock software until the next restart"));
@@ -494,6 +561,7 @@ ViewPtr make_settings_screen() {
         settings().save();
         App::instance().quit(kExitRestart);
         break;
+      case kUpdate: check_for_update_interactively(); break;
       case kReturnToKobo:
         if (App::instance().confirm(
                 "Return to the Kobo UI",

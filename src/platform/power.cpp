@@ -151,6 +151,31 @@ void Power::power_off() {
   if (system("poweroff") != 0) CK_LOGW("power: poweroff command failed");
 }
 
+void Power::stop_boot_led() {
+  int found = 0;
+  for (const fs::Entry& e : fs::list_dir("/sys/class/leds")) {
+    // Order matters: a hardware blink keeps running until its trigger is
+    // detached, and only then does brightness stick.
+    write_sysfs(e.path + "/trigger", "none");
+    write_sysfs(e.path + "/delay_on", "0");
+    write_sysfs(e.path + "/delay_off", "0");
+    write_sysfs(e.path + "/blink", "0");
+    write_sysfs(e.path + "/brightness", "0");
+    ++found;
+    CK_LOGI("power: led %s off", e.name.c_str());
+  }
+  // Older NTX boards drive the indicator through one node, with a channel
+  // per colour, instead of the LED class.
+  const char* kNtx = "/sys/devices/platform/ntx_led/lit";
+  if (fs::exists(kNtx)) {
+    for (int ch = 3; ch <= 4; ++ch) {
+      write_sysfs(kNtx, format("ch %d cur 0", ch));
+    }
+    ++found;
+  }
+  if (found == 0) CK_LOGI("power: no LED nodes to quieten");
+}
+
 void Power::set_charging_led(bool on) {
   write_sysfs(device().charging_led, on ? "255" : "0");
 }

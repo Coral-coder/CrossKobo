@@ -24,6 +24,11 @@ void allow_nickel();
 // this ran on. Both firmware generations name the script differently, and
 // the drawing tool has to go too.
 void stop_boot_animation();
+// Clears the launcher's crash counter once CrossKobo has clearly survived
+// start-up, so forced power-offs weeks apart cannot add up to a spurious
+// self-disable. Three forced power-offs in quick succession still trip it,
+// which is the documented way out of a wedged screen.
+void clear_crash_count();
 // Siphons PLATFORM/PRODUCT/DBUS_SESSION_BUS_ADDRESS etc. out of a running
 // Nickel so we can hand them back when restarting it later. Must be called
 // before stop_nickel().

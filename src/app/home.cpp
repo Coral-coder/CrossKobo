@@ -49,14 +49,30 @@ class HomeScreen : public View {
   }
 
   std::string title() const override { return "CrossKobo"; }
-  Refresh refresh_hint() const override { return Refresh::Image; }
   int tick_ms() const override { return 60000; }
-  bool on_tick() override { return settings().status_bar_clock; }
+  bool on_tick() override {
+    if (!settings().status_bar_clock) return false;
+    int64_t minute = wall_minutes();
+    if (minute == last_clock_minute_) return false;
+    last_clock_minute_ = minute;
+    clock_repaint_ = true;
+    return true;
+  }
+  Refresh refresh_hint() const override {
+    if (clock_repaint_) {
+      clock_repaint_ = false;
+      return Refresh::Fast;
+    }
+    return Refresh::Image;
+  }
 
   void draw(Canvas& canvas, const Rect& bounds) override;
   bool handle(const InputEvent& event) override;
 
  private:
+  int64_t last_clock_minute_ = -1;
+  mutable bool clock_repaint_ = false;
+
   // What the grid shows: reading history first, then anything else in the
   // library, newest first. A fresh install has no history at all, and
   // saying "your library is empty" in that case was simply wrong.
