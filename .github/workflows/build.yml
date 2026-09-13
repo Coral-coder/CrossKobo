@@ -143,11 +143,19 @@ jobs:
           body: |
             CrossKobo ${{ inputs.release_tag || github.ref_name }}
 
-            **Install:** unpack `CrossKobo-*-install.zip` to the root of the
-            Kobo's USB drive and eject. Firmware 5.x devices use the
-            `-fw5-install` package instead.
+            Unpack a zip to the root of the Kobo's USB drive and eject; the
+            device installs it and restarts by itself.
 
-            **Uninstall:** unpack `CrossKobo-*-uninstall.zip` the same way.
+            **`CrossKobo-catalogues-*-install.zip`** - an add-on. The stock
+            Kobo software stays in charge; this only adds OPDS catalogue
+            browsing (Shelfmark, Calibre-Web, Kavita, Komga, BookLore,
+            Gutenberg) to its menus, through NickelMenu. No boot takeover.
 
-            Read `docs/INSTALL.md` first, including the recovery section.
-            This build has not been tested on hardware.
+            **`CrossKobo-*-install.zip`** - the full interface, which starts
+            instead of the stock Kobo home screen. Firmware 5.x devices use
+            the `-fw5-install` package. Read `docs/INSTALL.md` first,
+            including the recovery section: holding a page-turn button while
+            the device starts boots the stock software, and both page
+            buttons together open touch calibration.
+
+            **Uninstall:** unpack the matching `-uninstall.zip` the same way.
