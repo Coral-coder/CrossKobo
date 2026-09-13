@@ -12,6 +12,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/catalogue_file.h"
 #include "app/watcher.h"
 #include "core/clock.h"
 #include "core/fs.h"
@@ -132,6 +133,9 @@ int main(int argc, char** argv) {
   // The watcher never touches the screen or the stock software: it waits
   // for one of CrossKobo's files to be opened from the Kobo library and
   // starts the real thing. Nothing below this applies to it.
+  // Something to edit over USB, whichever mode this is.
+  write_catalogue_file_template();
+
   if (watch) {
     std::string launcher = fs::join_path(paths().install, "menu-launch.sh");
     if (!fs::exists(launcher)) launcher = "/usr/local/crosskobo/menu-launch.sh";

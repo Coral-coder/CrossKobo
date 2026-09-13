@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "app/settings.h"
+#include "app/catalogue_file.h"
 #include "app/update.h"
 #include "net/sntp.h"
 #include "core/fs.h"
@@ -169,6 +170,69 @@ int main() {
     Settings reloaded;
     reloaded.from_json(empty_json);
     CHECK(reloaded.catalogues.empty());
+  }
+
+  // The catalogue file: a list of servers that travels, edited over USB or
+  // pasted in from a friend. One bad line must not cost the others.
+  {
+    const char* kFile =
+        "# a comment\n"
+        "\n"
+        "Friend's library | https://books.example.net/opds\n"
+        "https://standardebooks.org/feeds/opds\n"
+        "Private | https://host/opds | reader | secret\n"
+        "Their fanfic | https://fic.example.net/search.php?req={searchTerms}\n"
+        "Forced | https://host/weird | libgen\n"
+        "Searchy | https://host/find?q={searchTerms}\n"
+        "this line has no address at all\n";
+    std::vector<Settings::Catalogue> list = parse_catalogue_list(kFile);
+    CHECK(list.size() == 6);
+    if (list.size() == 6) {
+      CHECK(list[0].name == "Friend's library");
+      CHECK(list[0].url == "https://books.example.net/opds");
+      CHECK(list[0].from_file);
+      CHECK(!list[0].is_libgen());
+      // An address on its own is named after its host.
+      CHECK(list[1].name == "standardebooks.org");
+      CHECK(list[2].user == "reader" && list[2].password == "secret");
+      // search.php means the search format, whatever else the line says.
+      CHECK(list[3].is_libgen());
+      CHECK(list[3].url == "https://fic.example.net/search.php?req={searchTerms}");
+      CHECK(list[3].search_only());
+      // And the format can be stated outright.
+      CHECK(list[4].is_libgen());
+      // A placeholder with no recognised endpoint is a plain search source.
+      CHECK(!list[5].is_libgen());
+      CHECK(list[5].search == "https://host/find?q={searchTerms}");
+      CHECK(list[5].search_only());
+    }
+
+    // The JSON form, bare and wrapped.
+    const char* kJson =
+        "[{\"name\":\"Mine\",\"url\":\"https://host/opds\",\"user\":\"me\"}]";
+    std::vector<Settings::Catalogue> from_json = parse_catalogue_list(kJson);
+    CHECK(from_json.size() == 1);
+    if (!from_json.empty()) {
+      CHECK(from_json[0].name == "Mine" && from_json[0].user == "me");
+      CHECK(from_json[0].from_file);
+    }
+    CHECK(parse_catalogue_list(std::string("{\"catalogues\":") + kJson + "}").size() == 1);
+    CHECK(parse_catalogue_list("{not json at all").empty());
+    CHECK(parse_catalogue_list("").empty());
+
+    // File-sourced entries are never written into settings.json: the file
+    // stays the one place they are defined.
+    Settings s;
+    s.catalogues.clear();
+    Settings::Catalogue own;
+    own.name = "Typed in";
+    own.url = "https://host/opds";
+    s.catalogues.push_back(own);
+    s.catalogues.push_back(list[0]);
+    Settings reloaded;
+    reloaded.from_json(s.to_json());
+    CHECK(reloaded.catalogues.size() == 1);
+    if (!reloaded.catalogues.empty()) CHECK(reloaded.catalogues[0].name == "Typed in");
   }
 
   // The SNTP decoder: byte arithmetic on a packet from the network, so the

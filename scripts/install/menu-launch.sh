@@ -26,10 +26,24 @@ fi
 
 # Only one at a time: a second launch while CrossKobo owns the screen would
 # fight it for the framebuffer.
-if pidof crosskobo >/dev/null 2>&1; then
-    log "already running"
-    exit 0
+#
+# This cannot ask "pidof crosskobo": the watcher that started us IS a process
+# named crosskobo, so that answer is always yes and every tap on the library
+# entry did nothing but log "already running". A pid file written by this
+# script, checked against /proc, answers the question actually being asked -
+# and a stale one from a crash does not wedge it.
+LOCK="/tmp/crosskobo-launch.pid"
+if [ -f "${LOCK}" ]; then
+    running="$(cat "${LOCK}" 2>/dev/null)"
+    if [ -n "${running}" ] && [ -d "/proc/${running}" ]; then
+        log "already running as ${running}"
+        exit 0
+    fi
+    log "clearing a stale lock from ${running:-nowhere}"
+    rm -f "${LOCK}"
 fi
+echo $$ > "${LOCK}"
+trap 'rm -f "${LOCK}"' EXIT
 
 log "starting with: $*"
 cd "${INSTALL_DIR}" || exit 0

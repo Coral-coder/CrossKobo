@@ -38,8 +38,17 @@ fi
 # CrossKobo's runs at all.
 [ -f "${ONBOARD}/.crosskobo/DISABLE" ] && exit 0
 
-# Already watching? Then leave it alone.
-pidof crosskobo >/dev/null 2>&1 && exit 0
+# Already watching? Then leave it alone. Again, not "pidof crosskobo": that
+# also matches CrossKobo itself being used, and a reader who is in the
+# catalogue browser when this runs should not lose the watcher.
+WATCH_PID_FILE="/tmp/crosskobo-watch.pid"
+if [ -f "${WATCH_PID_FILE}" ]; then
+    watching="$(cat "${WATCH_PID_FILE}" 2>/dev/null)"
+    if [ -n "${watching}" ] && [ -d "/proc/${watching}" ]; then
+        exit 0
+    fi
+fi
 
 setsid "${INSTALL_DIR}/crosskobo" --watch >> "${LOG}" 2>&1 &
+echo $! > "${WATCH_PID_FILE}"
 exit 0

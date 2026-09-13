@@ -213,6 +213,17 @@ else
 fi
 grep -q -- '--return-to-kobo' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
 check $? "menu launcher hands the screen back on exit"
+# The watcher is itself a process named crosskobo, so a "pidof crosskobo"
+# guard in the launcher is always true and every tap does nothing. It has to
+# ask about its own lock instead.
+if grep -vE '^[[:space:]]*#' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh" |
+        grep -q 'pidof crosskobo'; then
+    check 1 "menu launcher does not mistake the watcher for a running app"
+else
+    check 0 "menu launcher does not mistake the watcher for a running app"
+fi
+grep -q 'crosskobo-launch.pid' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
+check $? "menu launcher locks on its own pid file"
 
 # ---------------------------------------------------------------------------
 echo "uninstall payload:"

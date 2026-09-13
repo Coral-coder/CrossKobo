@@ -8,6 +8,7 @@
 
 #include "app/app.h"
 #include "app/home.h"
+#include "app/catalogue_file.h"
 #include "app/settings.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -328,6 +329,8 @@ class CatalogueList : public ListView {
         "Calibre-Web, Kavita, Komga, your own server, or a public catalogue. An address "
         "with {searchTerms} in it is added as a search source instead.");
     set_actions({{"Add", kAdd}, {"Find on network", kFind}});
+    // So there is always something to edit over USB.
+    write_catalogue_file_template();
     on_select_ = [this](int id) { activate(id); };
     on_long_press_ = [this](int id) { edit(id); };
     rebuild();
@@ -338,24 +341,49 @@ class CatalogueList : public ListView {
  private:
   enum { kAdd = -20, kFind = -21 };
 
+  std::vector<Settings::Catalogue> shown_;
+
   void rebuild() {
+    // Saved on the device first, then everything the file adds. The file is
+    // read every time this screen appears, so editing it over USB - or
+    // pasting in a line a friend sent - shows up without a restart.
+    shown_ = settings().catalogues;
+    for (const Settings::Catalogue& from_file : load_catalogue_file()) {
+      bool duplicate = false;
+      for (const Settings::Catalogue& known : shown_) {
+        if (known.url == from_file.url && known.search == from_file.search) duplicate = true;
+      }
+      if (!duplicate) shown_.push_back(from_file);
+    }
+
     std::vector<Item> items;
-    const std::vector<Settings::Catalogue>& list = settings().catalogues;
-    for (size_t i = 0; i < list.size(); ++i) {
+    int file_count = 0;
+    for (size_t i = 0; i < shown_.size(); ++i) {
+      const Settings::Catalogue& c = shown_[i];
       Item item;
       item.id = (int)i + 1;
-      item.row.title = list[i].name.empty() ? list[i].url : list[i].name;
-      if (list[i].is_libgen()) {
-        item.row.subtitle = "Search source \xc2\xb7 " + list[i].url;
-      } else if (list[i].search_only()) {
-        item.row.subtitle = "Search: " + list[i].search;
+      item.row.title = c.name.empty() ? c.url : c.name;
+      if (c.is_libgen()) {
+        item.row.subtitle = "Search source \xc2\xb7 " + c.url;
+      } else if (c.search_only()) {
+        item.row.subtitle = "Search: " + c.search;
       } else {
-        item.row.subtitle = list[i].url;
+        item.row.subtitle = c.url;
+      }
+      if (c.from_file) {
+        ++file_count;
+        item.row.subtitle = "From catalogues.txt \xc2\xb7 " + item.row.subtitle;
       }
       item.row.trailing = "›";
       items.push_back(item);
     }
-    set_status_line(list.empty() ? "" : "Hold a catalogue to remove it");
+    if (shown_.empty()) {
+      set_status_line("");
+    } else if (file_count > 0) {
+      set_status_line(format("%d from catalogues.txt, hold one to remove it", file_count));
+    } else {
+      set_status_line("Hold a catalogue to remove it");
+    }
     set_items(std::move(items), true);
   }
 
@@ -369,10 +397,8 @@ class CatalogueList : public ListView {
       return;
     }
     size_t index = (size_t)(id - 1);
-    const std::vector<Settings::Catalogue>& list = settings().catalogues;
-    if (index >= list.size()) return;
-    const Settings::Catalogue& c = list[index];
-    App::instance().push(open_catalogue(c));
+    if (index >= shown_.size()) return;
+    App::instance().push(open_catalogue(shown_[index]));
   }
 
   // Sweeps the local network for an OPDS feed. Modal on purpose: it takes a
@@ -477,6 +503,16 @@ class CatalogueList : public ListView {
 
   void edit(int id) {
     size_t index = (size_t)(id - 1);
+    if (index >= shown_.size()) return;
+    if (shown_[index].from_file) {
+      // The file owns it, so removing it here would only last until the next
+      // time the file was read.
+      App::instance().show_message(
+          shown_[index].name,
+          "This one comes from .crosskobo/catalogues.txt on the drive.\n\nRemove its line "
+          "from that file to take it away.");
+      return;
+    }
     std::vector<Settings::Catalogue>& list = settings().catalogues;
     if (index >= list.size()) return;
     std::string name = list[index].name;

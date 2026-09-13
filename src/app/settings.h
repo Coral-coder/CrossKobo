@@ -116,6 +116,10 @@ struct Settings {
     // forking it. CrossKobo ships no addresses for either - the format is
     // just how it talks to the server you point it at.
     std::string format = "opds";
+    // Read from .crosskobo/catalogues.txt rather than added on the device.
+    // Never written back to settings.json, so the file stays the one place
+    // it is defined and editing it out really removes it.
+    bool from_file = false;
 
     bool is_libgen() const { return format == "libgen"; }
     // Nothing to browse: the catalogue is searched, not walked.

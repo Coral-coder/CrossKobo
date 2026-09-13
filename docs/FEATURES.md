@@ -156,6 +156,21 @@ seconds are ignored so opening a book by accident does not pollute them.
   downloading writes straight into `Downloads` on the drive, where the
   library picks it up like anything copied over USB. EPUB is preferred when
   a catalogue offers several formats.
+- **A list of servers in a file.** `.crosskobo/catalogues.txt` on the drive
+  is read every time the catalogue list appears, so a server added there
+  shows up without a restart - and a friend can send you a line to paste:
+
+  ```
+  A friend's library | https://books.example.net/opds | reader | secret
+  Their server       | https://fic.example.net/search.php?req={searchTerms}
+  ```
+
+  Addresses rather than IP numbers, so the same file works at home and away.
+  The client is worked out from the address, or say `libgen` or `opds`
+  outright. A JSON array in `.crosskobo/catalogues.json` works too. These
+  entries are never written into `settings.json`: the file stays the one
+  place they are defined, so deleting a line really removes it. CrossKobo
+  writes a commented template on first run.
 - **Find on network** sweeps the local subnet for a catalogue rather than
   making you type an address: a TCP probe of the ports these servers
   actually use (8083 Calibre-Web, 8080 Calibre and Komga, 5000 Kavita,

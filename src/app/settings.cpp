@@ -71,6 +71,7 @@ Json Settings::to_json() const {
   {
     Json list = Json::array();
     for (const Catalogue& c : catalogues) {
+      if (c.from_file) continue;   // the file owns those
       Json entry = Json::object();
       entry["name"] = Json(c.name);
       entry["url"] = Json(c.url);
