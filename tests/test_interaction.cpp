@@ -398,25 +398,26 @@ int main(int argc, char** argv) {
   CHECK(app.depth() == 2);
   app.pop();
 
-  // The watcher's trigger names are what appears in the stock Kobo library,
-  // so a mismatch between the shipped files and the names it reacts to
-  // means a library entry that does nothing.
+  // The watcher reacts to exactly the filenames it was given, and writing
+  // the trigger files twice leaves an edited one alone.
   {
-    CHECK(watcher_command_for("CrossKobo Catalogues.txt") == "--catalogues");
-    CHECK(watcher_command_for("CrossKobo Shelfmark.txt") == "--catalogue Shelfmark");
-    CHECK(watcher_command_for("CrossKobo.txt").empty());
-    CHECK(watcher_command_for("Some Book.epub") == "\xff");
-    CHECK(watcher_command_for("crosskobo catalogues.txt") == "\xff");  // case matters
-    CHECK(watcher_trigger_names().size() == 3);
+    std::vector<Trigger> triggers = {
+        {"Catalogues.txt", "--catalogues", "Open me.\n"},
+        {"Extra.txt", "", ""},   // recognised, never created
+    };
+    CHECK(watcher_command_for(triggers, "Catalogues.txt") == "--catalogues");
+    CHECK(watcher_command_for(triggers, "Extra.txt").empty());
+    CHECK(watcher_command_for(triggers, "Some Book.epub") == "\xff");
+    CHECK(watcher_command_for(triggers, "catalogues.txt") == "\xff");  // case matters
 
-    // Writing them twice leaves the reader's edits alone.
     std::string dir = std::string(root) + "/triggers";
     fs::mkdir_p(dir);
-    CHECK(write_trigger_files(dir));
-    std::string path = dir + "/CrossKobo Catalogues.txt";
+    CHECK(write_trigger_files(dir, triggers));
+    std::string path = dir + "/Catalogues.txt";
     CHECK(fs::exists(path));
+    CHECK(!fs::exists(dir + "/Extra.txt"));
     CHECK(fs::write_file_atomic(path, "mine"));
-    CHECK(write_trigger_files(dir));
+    CHECK(write_trigger_files(dir, triggers));
     std::string body;
     CHECK(fs::read_file(path, body) && body == "mine");
   }

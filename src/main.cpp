@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "app/app.h"
 #include "app/home.h"
@@ -139,7 +140,15 @@ int main(int argc, char** argv) {
   if (watch) {
     std::string launcher = fs::join_path(paths().install, "menu-launch.sh");
     if (!fs::exists(launcher)) launcher = "/usr/local/crosskobo/menu-launch.sh";
-    return run_watcher("/bin/sh " + launcher);
+    std::vector<Trigger> triggers = {
+        {"CrossKobo Catalogues.txt", "--catalogues",
+         "Open this from the Kobo library to browse catalogues.\n"},
+        {"CrossKobo Shelfmark.txt", "--catalogue Shelfmark",
+         "Open this from the Kobo library to go straight to the catalogue saved as "
+         "Shelfmark.\n"},
+        {"CrossKobo.txt", "", ""},
+    };
+    return run_watcher("/bin/sh " + launcher, triggers);
   }
 
   // The user's escape hatch: if this file exists we are not supposed to be

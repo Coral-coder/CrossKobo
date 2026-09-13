@@ -571,15 +571,18 @@ int App::run() {
   int64_t last_usb_check = 0;
   // The firmware's boot animation can be started a moment after we take the
   // screen, so sweep for it again over the first few seconds.
-  int64_t animation_sweep_until = simulated_ ? 0 : now_ms() + 20000;
+  // Everything below is for an interface that owns the device. In minimal
+  // mode the stock software still does, so none of it applies.
+  const bool owns_device = !simulated_ && !minimal_;
+  int64_t animation_sweep_until = owns_device ? now_ms() + 20000 : 0;
   int64_t last_animation_sweep = 0;
   // Survive this long and the launcher's crash counter is forgiven, so
   // forced power-offs weeks apart cannot add up to a self-disable.
-  int64_t forgive_crashes_at = simulated_ ? 0 : now_ms() + 120000;
+  int64_t forgive_crashes_at = owns_device ? now_ms() + 120000 : 0;
   // An update check, if the radio is already up, a minute after start-up so
   // it never competes with opening a book.
   int64_t update_check_at =
-      (simulated_ || !settings().auto_update_check) ? 0 : now_ms() + 60000;
+      (!owns_device || !settings().auto_update_check) ? 0 : now_ms() + 60000;
   while (!quit_requested_) {
     // Safe point: nothing is executing inside a view any more.
     release_retired();
@@ -597,7 +600,7 @@ int App::run() {
     // The clock, once per session, as soon as there is a network. In a
     // child process: settimeofday changes the clock for everyone, and a
     // time server that never answers must not stall the reader.
-    if (!clock_synced_ && !simulated_ && settings().clock_sync &&
+    if (!clock_synced_ && owns_device && settings().clock_sync &&
         Net::instance().connected()) {
       clock_synced_ = true;
       sys::run_detached([]() {
@@ -627,8 +630,8 @@ int App::run() {
     InputEvent event = Input::instance().next(timeout);
     if (event.type == EventType::Timeout) {
       if (view && view->tick_ms() > 0 && view->on_tick()) invalidate();
-      check_idle();
-      if (now_ms() - last_usb_check > 2000) {
+      if (owns_device) check_idle();
+      if (owns_device && now_ms() - last_usb_check > 2000) {
         last_usb_check = now_ms();
         check_usb();
       }

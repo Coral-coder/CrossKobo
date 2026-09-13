@@ -139,11 +139,11 @@ int main() {
   {
     Settings fresh;
     fresh.apply_catalogue_defaults();
-    CHECK(fresh.catalogues.size() == 3);
+    CHECK(fresh.catalogues.size() == 2);
     CHECK(!fresh.catalogues.empty() && !fresh.catalogues[0].url.empty());
     // Seeding twice does not duplicate.
     fresh.apply_catalogue_defaults();
-    CHECK(fresh.catalogues.size() == 3);
+    CHECK(fresh.catalogues.size() == 2);
 
     Settings::Catalogue mine;
     mine.name = "My server";
@@ -156,7 +156,7 @@ int main() {
     Json json = fresh.to_json();
     Settings loaded;
     loaded.from_json(json);
-    CHECK(loaded.catalogues.size() == 4);
+    CHECK(loaded.catalogues.size() == 3);
     const Settings::Catalogue& back = loaded.catalogues.back();
     CHECK(back.name == "My server");
     CHECK(back.search == mine.search);

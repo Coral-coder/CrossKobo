@@ -238,7 +238,9 @@ void Settings::apply_catalogue_defaults() {
     const char* name;
     const char* url;
   } kDefaults[] = {
-      {"Standard Ebooks", "https://standardebooks.org/feeds/opds"},
+      // Open, no account needed. Standard Ebooks was in this list until its
+      // feed answered 401 in the fetcher check - seeding a catalogue that
+      // cannot be opened is worse than not seeding it.
       {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/"},
       {"Internet Archive", "https://bookserver.archive.org/catalog/"},
   };

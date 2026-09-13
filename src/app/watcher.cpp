@@ -28,73 +28,9 @@
 namespace ck {
 namespace {
 
-// One trigger per thing worth launching. The names are what the reader sees
-// in the stock library, so they have to read as menu entries.
-struct Trigger {
-  const char* filename;
-  const char* args;
-  // Whether the watcher creates this one when it is missing. The full
-  // interface's trigger is recognised but never created, so the add-on does
-  // not put an entry for it on someone's drive uninvited.
-  bool create;
-};
-
-const Trigger kTriggers[] = {
-    {"CrossKobo Catalogues.txt", "--catalogues", true},
-    {"CrossKobo Shelfmark.txt", "--catalogue Shelfmark", true},
-    {"CrossKobo.txt", "", false},
-};
-
 // Nickel opens a file several times while it works out what it is, so a
 // tap can arrive as a burst. One launch per couple of seconds is plenty.
 const int64_t kDebounceMs = 3000;
-
-}  // namespace
-
-std::string watcher_command_for(const std::string& filename) {
-  for (const Trigger& trigger : kTriggers) {
-    if (filename == trigger.filename) return trigger.args;
-  }
-  return "\xff";  // sentinel: not a trigger at all
-}
-
-std::vector<std::string> watcher_trigger_names() {
-  std::vector<std::string> names;
-  for (const Trigger& trigger : kTriggers) names.push_back(trigger.filename);
-  return names;
-}
-
-bool write_trigger_files(const std::string& dir) {
-  bool all = true;
-  for (const Trigger& trigger : kTriggers) {
-    if (!trigger.create) continue;
-    std::string path = dir + "/" + trigger.filename;
-    if (fs::exists(path)) continue;
-    std::string body =
-        "CrossKobo\n"
-        "=========\n\n"
-        "Open this from your Kobo's library and CrossKobo starts.\n\n";
-    if (std::string(trigger.args).find("catalogue") != std::string::npos) {
-      body +=
-          "This one opens the catalogue browser: your OPDS libraries, and the\n"
-          "public-domain catalogues CrossKobo ships with.\n\n"
-          "Books you download land in the Downloads folder on this drive,\n"
-          "where your Kobo finds them like anything copied over USB.\n\n";
-    }
-    body +=
-        "Leave CrossKobo with a swipe up from the bottom edge, or a\n"
-        "page-turn button, and the Kobo software comes straight back.\n\n"
-        "Deleting this file removes the entry; the add-on puts it back on the\n"
-        "next restart unless you remove the add-on too.\n";
-    if (!fs::write_file_atomic(path, body)) {
-      CK_LOGW("watcher: could not write %s", path.c_str());
-      all = false;
-    }
-  }
-  return all;
-}
-
-namespace {
 
 // Waits for the user partition to come back, which it does every time the
 // stock software finishes sharing the drive with a computer.
@@ -112,7 +48,29 @@ bool wait_for_mount(const std::string& dir) {
 
 }  // namespace
 
-int run_watcher(const std::string& launcher) {
+std::string watcher_command_for(const std::vector<Trigger>& triggers,
+                                const std::string& filename) {
+  for (const Trigger& trigger : triggers) {
+    if (filename == trigger.filename) return trigger.args;
+  }
+  return "\xff";  // sentinel: not a trigger at all
+}
+
+bool write_trigger_files(const std::string& dir, const std::vector<Trigger>& triggers) {
+  bool all = true;
+  for (const Trigger& trigger : triggers) {
+    if (trigger.blurb.empty()) continue;   // recognised, never created
+    std::string path = dir + "/" + trigger.filename;
+    if (fs::exists(path)) continue;
+    if (!fs::write_file_atomic(path, trigger.blurb)) {
+      CK_LOGW("watcher: could not write %s", path.c_str());
+      all = false;
+    }
+  }
+  return all;
+}
+
+int run_watcher(const std::string& launcher, const std::vector<Trigger>& triggers) {
   const std::string dir = paths().onboard;
 
   int fd = inotify_init();
@@ -130,7 +88,7 @@ int run_watcher(const std::string& launcher) {
       // replaces a file it has indexed, and a watch on the inode would go
       // quiet. IN_OPEN on the directory reports opens of everything in it,
       // with the name.
-      write_trigger_files(dir);
+      write_trigger_files(dir, triggers);
       wd = inotify_add_watch(fd, dir.c_str(), IN_OPEN | IN_UNMOUNT);
       if (wd < 0) {
         CK_LOGW("watcher: cannot watch %s (%s), waiting for the mount",
@@ -142,8 +100,7 @@ int run_watcher(const std::string& launcher) {
         }
         continue;
       }
-      CK_LOGI("watcher: watching %s for %zu triggers", dir.c_str(),
-              watcher_trigger_names().size());
+      CK_LOGI("watcher: watching %s for %zu triggers", dir.c_str(), triggers.size());
     }
 
     ssize_t n = read(fd, buffer.data(), buffer.size());
@@ -167,15 +124,13 @@ int run_watcher(const std::string& launcher) {
       }
       if (event->len == 0) continue;
       std::string name(event->name);
-      std::string args = watcher_command_for(name);
+      std::string args = watcher_command_for(triggers, name);
       if (args == "\xff") continue;
       if (now_ms() - last_launch < kDebounceMs) continue;
       last_launch = now_ms();
       std::string command = launcher + " " + args + " >/dev/null 2>&1 &";
       CK_LOGI("watcher: %s opened, running %s", name.c_str(), command.c_str());
-      if (system(command.c_str()) != 0) {
-        CK_LOGW("watcher: launch failed");
-      }
+      if (system(command.c_str()) != 0) CK_LOGW("watcher: launch failed");
     }
   }
   if (wd >= 0) inotify_rm_watch(fd, wd);
