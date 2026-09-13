@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <cmath>
+
 #include "app/settings.h"
 #include "core/clock.h"
 #include "core/fs.h"
@@ -12,6 +14,8 @@
 #include "platform/device.h"
 #include "platform/power.h"
 #include "platform/system.h"
+#include "library/library.h"
+#include "reader/state.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
 
@@ -108,15 +112,19 @@ void App::push(ViewPtr view) {
 void App::pop() {
   if (stack_.size() <= 1) return;
   stack_.back()->on_hide();
+  retired_.push_back(std::move(stack_.back()));
   stack_.pop_back();
   stack_.back()->on_show();
   invalidate(Refresh::Text);
 }
 
+void App::release_retired() { retired_.clear(); }
+
 void App::replace(ViewPtr view) {
   if (!view) return;
   if (!stack_.empty()) {
     stack_.back()->on_hide();
+    retired_.push_back(std::move(stack_.back()));
     stack_.pop_back();
   }
   stack_.push_back(std::move(view));
@@ -127,6 +135,7 @@ void App::replace(ViewPtr view) {
 void App::pop_to_root() {
   while (stack_.size() > 1) {
     stack_.back()->on_hide();
+    retired_.push_back(std::move(stack_.back()));
     stack_.pop_back();
   }
   if (!stack_.empty()) stack_.back()->on_show();
@@ -202,19 +211,110 @@ void App::draw_sleep_screen() {
   Rect b = screen.bounds();
 
   const Settings& s = settings();
-  bool drew_image = false;
-  if (s.sleep_screen == SleepScreen::Custom && !s.sleep_custom_image.empty()) {
-    Canvas image;
-    if (Canvas::load_image(s.sleep_custom_image, image)) {
-      double scale = std::max((double)b.w / image.width(), (double)b.h / image.height());
-      int w = (int)(image.width() * scale);
-      int h = (int)(image.height() * scale);
-      canvas.blit_scaled(image, Rect((b.w - w) / 2, (b.h - h) / 2, w, h));
-      drew_image = true;
+  const std::vector<RecentEntry>& recents = Recents::instance().entries();
+  const RecentEntry* book = recents.empty() ? nullptr : &recents.front();
+
+  switch (s.sleep_screen) {
+    case SleepScreen::Blank:
+      break;
+
+    case SleepScreen::Custom: {
+      // Either the configured path, or a sleep.png the user dropped next
+      // to their settings, which needs no file picker.
+      std::string image_path = s.sleep_custom_image;
+      if (image_path.empty()) image_path = paths().data + "/sleep.png";
+      Canvas image;
+      if (Canvas::load_image(image_path, image)) {
+        // Fill the screen, cropping rather than distorting.
+        double scale = std::max((double)b.w / image.width(), (double)b.h / image.height());
+        int w = (int)(image.width() * scale);
+        int h = (int)(image.height() * scale);
+        canvas.blit_scaled(image, Rect((b.w - w) / 2, (b.h - h) / 2, w, h));
+      } else {
+        draw_centered_message(canvas, b, "CrossKobo", th.title_px);
+      }
+      break;
+    }
+
+    case SleepScreen::Cover: {
+      const Canvas* cover = book ? covers::thumbnail(book->path, b.w, b.h) : nullptr;
+      if (cover && cover->valid()) {
+        // Cover art, scaled to fit with the title underneath if it leaves
+        // room. Fitting rather than cropping keeps the artwork intact.
+        double scale = std::min((double)b.w / cover->width(), (double)b.h / cover->height());
+        int w = (int)(cover->width() * scale);
+        int h = (int)(cover->height() * scale);
+        canvas.blit_scaled(*cover, Rect((b.w - w) / 2, (b.h - h) / 2, w, h));
+      } else if (book) {
+        Rect card = b.inset(b.w / 6, b.h / 5);
+        draw_cover(canvas, card, nullptr, book->title, book->author);
+      } else {
+        draw_centered_message(canvas, b, "CrossKobo", th.title_px);
+      }
+      break;
+    }
+
+    case SleepScreen::BookProgress: {
+      if (!book) {
+        draw_centered_message(canvas, b, "CrossKobo", th.title_px);
+        break;
+      }
+      Rect middle(b.x + th.padding * 2, b.y + b.h / 2 - th.row_height * 2,
+                  b.w - 4 * th.padding, th.row_height * 4);
+      TextStyle title_st = ui_style(th.title_px, th.fg, FontStyle::Bold);
+      std::vector<std::string> lines = wrap_text(book->title, title_st, middle.w);
+      int line_h = text_height(title_st);
+      int y = middle.y;
+      for (size_t i = 0; i < lines.size() && i < 3; ++i) {
+        draw_text_in(canvas, Rect(middle.x, y, middle.w, line_h), lines[i], title_st, 0);
+        y += line_h;
+      }
+      if (!book->author.empty()) {
+        draw_text_in(canvas, Rect(middle.x, y + 4, middle.w, th.base_px + 8), book->author,
+                     ui_style(th.base_px, th.muted), 0);
+        y += th.base_px + 12;
+      }
+      Rect bar(middle.x + middle.w / 6, y + th.padding, middle.w * 2 / 3, 6);
+      draw_progress_bar(canvas, bar, book->progress, 6);
+      draw_text_in(canvas, Rect(middle.x, bar.bottom() + 8, middle.w, th.base_px + 8),
+                   format("%d%% read", (int)std::lround(book->progress * 100)),
+                   ui_style(th.base_px, th.muted), 0);
+      break;
+    }
+
+    case SleepScreen::Dashboard: {
+      const Stats& stats = Stats::instance();
+      struct Tile {
+        const char* label;
+        std::string value;
+      };
+      const Tile tiles[] = {
+          {"Books finished", format("%d", stats.books_finished)},
+          {"Time reading", human_duration(stats.total_seconds)},
+          {"Pages turned", format("%d", stats.pages_turned)},
+          {"Today", human_duration(stats.seconds_today())},
+          {"Streak", format("%d day%s", stats.streak_days(),
+                            stats.streak_days() == 1 ? "" : "s")},
+      };
+      draw_text_in(canvas, Rect(b.x, b.y + b.h / 6, b.w, th.title_px + 10), "CrossKobo",
+                   ui_style(th.title_px, th.muted, FontStyle::Bold), 0);
+      int y = b.y + b.h / 6 + th.title_px + th.row_height;
+      for (const Tile& tile : tiles) {
+        draw_text_in(canvas, Rect(b.x + b.w / 6, y, b.w * 2 / 3, th.row_height), tile.label,
+                     ui_style(th.base_px, th.muted), -1);
+        draw_text_in(canvas, Rect(b.x + b.w / 6, y, b.w * 2 / 3, th.row_height), tile.value,
+                     ui_style(th.base_px, th.fg, FontStyle::Bold), 1);
+        canvas.fill_rect(Rect(b.x + b.w / 6, y + th.row_height - 1, b.w * 2 / 3, 1), th.faint);
+        y += th.row_height;
+      }
+      break;
     }
   }
-  if (!drew_image && s.sleep_screen != SleepScreen::Blank) {
-    draw_centered_message(canvas, b, "CrossKobo\nsleeping", th.title_px);
+
+  // A quiet line at the bottom, so a sleeping device does not look broken.
+  if (s.sleep_screen != SleepScreen::Blank && s.sleep_screen != SleepScreen::Custom) {
+    draw_text_in(canvas, Rect(b.x, b.bottom() - th.row_height, b.w, th.small_px + 8),
+                 "Press the power button to wake", ui_style(th.small_px, th.faint), 0);
   }
   screen.flush(b, Refresh::Flash, true);
 }
@@ -241,8 +341,22 @@ void App::sleep_now() {
 void App::wake_up() {
   if (!asleep_) return;
   asleep_ = false;
+  int64_t slept_seconds = (now_ms() - sleep_started_ms_) / 1000;
   last_activity_ms_ = now_ms();
-  CK_LOGI("app: awake after %lld s", (long long)((now_ms() - sleep_started_ms_) / 1000));
+  CK_LOGI("app: awake after %lld s", (long long)slept_seconds);
+
+  // Power off rather than resume if the device has been asleep longer than
+  // the user asked for: suspend still drains a little, and a reader left in
+  // a bag for a fortnight should not come out flat.
+  int hours = settings().power_off_hours;
+  if (hours > 0 && slept_seconds >= (int64_t)hours * 3600 && !simulated_) {
+    CK_LOGI("app: asleep for %lld h, powering off", (long long)(slept_seconds / 3600));
+    settings().save();
+    Screen::instance().close();
+    Power::instance().power_off();
+    quit_requested_ = true;
+    return;
+  }
   Input::instance().rescan();
   Input::instance().set_screen_size(Screen::instance().width(), Screen::instance().height());
   Input::instance().drain();
@@ -373,6 +487,27 @@ void App::handle_global(const InputEvent& event) {
   }
 }
 
+void App::pump(const InputEvent& event) {
+  // Safe point: nothing is executing inside a view any more, so views
+  // retired by the previous event can be released.
+  release_retired();
+  note_activity();
+  if (asleep_) {
+    wake_up();
+    return;
+  }
+  handle_global(event);
+  if (quit_requested_) return;
+  if (View* view = top()) {
+    if (view->handle(event)) invalidate();
+  }
+  if (!toast_text_.empty() && now_ms() > toast_until_ms_) {
+    toast_text_.clear();
+    invalidate(Refresh::Fast);
+  }
+  if (needs_draw_) draw_frame();
+}
+
 int App::run() {
   if (stack_.empty()) {
     CK_LOGE("app: nothing to show");
@@ -380,6 +515,8 @@ int App::run() {
   }
   int64_t last_usb_check = 0;
   while (!quit_requested_) {
+    // Safe point: nothing is executing inside a view any more.
+    release_retired();
     if (needs_draw_) draw_frame();
 
     View* view = top();
@@ -398,20 +535,7 @@ int App::run() {
       if (simulated_) break;  // headless runs render one frame and stop
       continue;
     }
-
-    note_activity();
-    if (asleep_) {
-      wake_up();
-      continue;
-    }
-    handle_global(event);
-    if (quit_requested_) break;
-    view = top();
-    if (view && view->handle(event)) invalidate();
-    if (!toast_text_.empty() && now_ms() > toast_until_ms_) {
-      toast_text_.clear();
-      invalidate(Refresh::Fast);
-    }
+    pump(event);
   }
 
   settings().save();
@@ -421,6 +545,7 @@ int App::run() {
 
 void App::shutdown() {
   stack_.clear();
+  retired_.clear();
   Input::instance().close();
   Screen::instance().close();
 }

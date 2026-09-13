@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include <linux/fb.h>
+
 #include "gfx/canvas.h"
 #include "gfx/geometry.h"
 
@@ -96,6 +98,7 @@ class Screen {
   int fb_stride_ = 0;                // bytes per line
   int r_off_ = 16, g_off_ = 8, b_off_ = 0, a_off_ = 24;  // bit offsets
   bool restore_vinfo_ = false;
+  struct fb_var_screeninfo* saved_vinfo_ = nullptr;  // original mode, if changed
   std::string fb_path_;
 
   int logical_w_ = 0, logical_h_ = 0;

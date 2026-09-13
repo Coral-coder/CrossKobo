@@ -123,9 +123,11 @@ rather than hiding them:
   on MediaTek devices and software inversion elsewhere.
 - Front light brightness and, on devices with natural light, warmth.
 - Rotation in 90° steps, with input rotated to match.
-- Sleep after 0-120 minutes; power off after 0-48 hours.
+- Sleep after 0-120 minutes; power off after 0-48 hours **asleep**, so a
+  reader left in a bag does not come out flat.
 - Sleep screens: book cover, reading progress, statistics, a custom image,
-  or blank.
+  or blank. For a custom image, drop a `sleep.png` into the `.crosskobo`
+  folder on the drive (or set an explicit path in the settings file).
 - Sleep uses the kernel sequence the stock software uses, and refuses to
   suspend while charging on MediaTek devices, where that hangs the kernel.
 

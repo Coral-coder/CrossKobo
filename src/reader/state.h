@@ -63,7 +63,9 @@ struct Stats {
   static Stats& instance();
   void load();
   void save() const;
-  void add_session(int64_t seconds, int pages);
+  // `new_session` distinguishes opening a book from merely coming back
+  // from a menu, which would otherwise inflate the session count.
+  void add_reading(int64_t seconds, int pages, bool new_session);
   void note_finished();
   int64_t average_session() const { return sessions ? total_seconds / sessions : 0; }
   double pages_per_minute() const {

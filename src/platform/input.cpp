@@ -120,12 +120,9 @@ bool Input::open() {
 
 void Input::rescan() {
   close();
-  const DeviceInfo& dev = device();
-  // Sensible defaults per model; the calibration screen can override them
-  // and the values are then remembered in settings.
-  if (dev.codename.find("monza") != std::string::npos) {
-    touch_tf_.mirror_y = true;
-  }
+  // Note: the digitiser transforms are not touched here. They come from
+  // settings (seeded with per-model defaults on first run) and rescanning
+  // must not undo a calibration the user has made.
 
   for (const fs::Entry& e : fs::list_dir("/dev/input", true)) {
     if (!starts_with(e.name, "event")) continue;
@@ -153,7 +150,6 @@ void Input::close() {
   devices_.clear();
   pen_fd_count_ = 0;
   queue_.clear();
-  pen_samples_.clear();
   touching_ = false;
   pen_down_ = false;
 }
@@ -174,11 +170,14 @@ void Input::map_point(const Device& d, int raw_x, int raw_y, bool is_pen, int& o
   if (tf.mirror_x) nx = 1.0f - nx;
   if (tf.mirror_y) ny = 1.0f - ny;
 
-  // The screen may be rotated relative to the panel.
+  // The screen may be rotated relative to the panel. This is the inverse
+  // of the rotation Screen applies when it copies the canvas out, so a
+  // touch at the top-left of what the user sees maps to the top-left of
+  // the logical screen whichever way round the device is held.
   for (int i = 0; i < rotation_; ++i) {
     float t = nx;
-    nx = 1.0f - ny;
-    ny = t;
+    nx = ny;
+    ny = 1.0f - t;
   }
 
   int w = screen_w_ > 0 ? screen_w_ : 1;
@@ -251,7 +250,6 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             e.tool = pen_tool_;
             e.time_ms = now;
             out.push_back(e);
-            pen_samples_.push_back(e);
             pen_down_ = false;
           }
           continue;
@@ -267,7 +265,6 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             e.tool = pen_tool_;
             e.time_ms = now;
             out.push_back(e);
-            pen_samples_.push_back(e);
           } else if (pen_down_) {
             InputEvent e;
             e.type = EventType::PenUp;
@@ -276,7 +273,6 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             e.tool = pen_tool_;
             e.time_ms = now;
             out.push_back(e);
-            pen_samples_.push_back(e);
             pen_down_ = false;
           }
           continue;
@@ -381,7 +377,6 @@ void Input::read_device(Device& d, std::vector<InputEvent>& out) {
             e.pressure = pen_pressure_;
             e.tool = pen_tool_;
             e.time_ms = now;
-            pen_samples_.push_back(e);
             out.push_back(e);
           }
         } else {
@@ -481,13 +476,6 @@ void Input::drain() {
   std::vector<InputEvent> scratch;
   for (Device& d : devices_) read_device(d, scratch);
   queue_.clear();
-  pen_samples_.clear();
-}
-
-std::vector<InputEvent> Input::take_pen_samples() {
-  std::vector<InputEvent> out;
-  out.swap(pen_samples_);
-  return out;
 }
 
 std::string Input::describe_devices() const {

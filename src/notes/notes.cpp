@@ -153,14 +153,50 @@ void draw_stroke(Canvas& canvas, const Stroke& stroke, const Rect& area, int pag
   };
 
   Color color = stroke.color;
-  if (stroke.highlighter) color = color.with_alpha(90);
 
   if (stroke.points.size() == 1) {
     const InkPoint& p = stroke.points.front();
-    canvas.fill_circle((int)map_x(p.x), (int)map_y(p.y),
-                       std::max(1, (int)(width_at(p.pressure) / 2)), color);
+    int radius = std::max(1, (int)(width_at(p.pressure) / 2));
+    if (stroke.highlighter) {
+      canvas.fill_circle((int)map_x(p.x), (int)map_y(p.y), radius, color.with_alpha(90));
+    } else {
+      canvas.fill_circle((int)map_x(p.x), (int)map_y(p.y), radius, color);
+    }
     return;
   }
+
+  if (stroke.highlighter) {
+    // A translucent stroke has to be composited once, not segment by
+    // segment: overlapping segment ends would otherwise show as a row of
+    // darker dots along the line. Build the whole stroke opaque in a
+    // scratch buffer, then blend that in one pass.
+    Rect box = stroke.bounds(2);
+    Rect dst(area.x + (int)(box.x * scale) - 2, area.y + (int)(box.y * scale) - 2,
+             (int)(box.w * scale) + 4, (int)(box.h * scale) + 4);
+    dst = dst.intersect(canvas.clip());
+    if (dst.empty()) return;
+    Canvas scratch(dst.w, dst.h);
+    scratch.clear(Color::transparent());
+    for (size_t i = 1; i < stroke.points.size(); ++i) {
+      const InkPoint& a = stroke.points[i - 1];
+      const InkPoint& b = stroke.points[i];
+      scratch.draw_thick_line_aa(map_x(a.x) - dst.x, map_y(a.y) - dst.y, map_x(b.x) - dst.x,
+                                 map_y(b.y) - dst.y, width_at(a.pressure), width_at(b.pressure),
+                                 color);
+    }
+    // Scale the accumulated coverage down to highlighter opacity.
+    for (int y = 0; y < scratch.height(); ++y) {
+      uint32_t* row = scratch.row(y);
+      for (int x = 0; x < scratch.width(); ++x) {
+        Color c = Color::unpack(row[x]);
+        if (!c.a) continue;
+        row[x] = c.with_alpha((uint8_t)(c.a * 90 / 255)).pack();
+      }
+    }
+    canvas.blit(scratch, dst.x, dst.y);
+    return;
+  }
+
   for (size_t i = 1; i < stroke.points.size(); ++i) {
     const InkPoint& a = stroke.points[i - 1];
     const InkPoint& b = stroke.points[i];

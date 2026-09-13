@@ -76,6 +76,8 @@ class ReaderScreen : public View {
 
   int64_t session_start_ms_ = 0;
   int session_pages_ = 0;
+  // A session is the book being open, not each return from a menu.
+  bool session_counted_ = false;
   int64_t last_auto_turn_ms_ = 0;
   int64_t last_save_ms_ = 0;
 };

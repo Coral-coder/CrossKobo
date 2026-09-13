@@ -76,9 +76,11 @@ bool Screen::open(const std::string& fb_path) {
     want.bits_per_pixel = 32;
     want.grayscale = 0;
     want.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
+    struct fb_var_screeninfo original = vinfo;
     if (ioctl(fb_fd_, FBIOPUT_VSCREENINFO, &want) == 0 &&
         ioctl(fb_fd_, FBIOGET_VSCREENINFO, &vinfo) == 0) {
       restore_vinfo_ = true;
+      saved_vinfo_ = new struct fb_var_screeninfo(original);
       ioctl(fb_fd_, FBIOGET_FSCREENINFO, &finfo);
       CK_LOGI("screen: switched framebuffer to 32bpp");
     } else {
@@ -132,6 +134,19 @@ bool Screen::open(const std::string& fb_path) {
 }
 
 void Screen::close() {
+  // Put the framebuffer back the way the stock software left it, or it
+  // will draw incorrectly when control is handed back.
+  if (fb_fd_ >= 0 && restore_vinfo_ && saved_vinfo_) {
+    saved_vinfo_->activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
+    if (ioctl(fb_fd_, FBIOPUT_VSCREENINFO, saved_vinfo_) < 0) {
+      CK_LOGW("screen: could not restore the original framebuffer mode: %s", strerror(errno));
+    } else {
+      CK_LOGI("screen: restored the original %ubpp framebuffer mode",
+              saved_vinfo_->bits_per_pixel);
+    }
+  }
+  delete saved_vinfo_;
+  saved_vinfo_ = nullptr;
   if (fb_mem_) {
     munmap(fb_mem_, fb_len_);
     fb_mem_ = nullptr;

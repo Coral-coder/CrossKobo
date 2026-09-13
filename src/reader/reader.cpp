@@ -136,18 +136,25 @@ void ReaderScreen::on_show() {
   session_pages_ = 0;
   last_auto_turn_ms_ = now_ms();
   last_save_ms_ = now_ms();
-  if (state_.sessions == 0) state_.sessions = 1;
   full_refresh_next_ = true;
 }
 
 void ReaderScreen::on_hide() {
+  // on_hide also fires when a menu opens on top, so only the reading time
+  // and pages accumulate here; the session itself is counted once.
   int64_t seconds = (now_ms() - session_start_ms_) / 1000;
-  if (seconds > 0) {
+  if (seconds > 0 || session_pages_ > 0) {
     state_.total_seconds += seconds;
-    ++state_.sessions;
     state_.pages_turned += session_pages_;
-    Stats::instance().add_session(seconds, session_pages_);
+    bool first = !session_counted_;
+    if (first) {
+      ++state_.sessions;
+      session_counted_ = true;
+    }
+    Stats::instance().add_reading(seconds, session_pages_, first);
   }
+  session_start_ms_ = now_ms();
+  session_pages_ = 0;
   update_progress();
   save_now();
 }
@@ -356,9 +363,11 @@ void ReaderScreen::draw_status_bar(Canvas& canvas, const Rect& bounds) {
                  ellipsize(title, st, std::max(0, right - left - 10)), st, -1);
   }
   if (s.status_bar_progress_bar) {
-    Rect track(content.x, content.bottom() + h + 2, content.w,
-               s.status_bar_progress_thickness);
-    draw_progress_bar(canvas, track, state_.progress, s.status_bar_progress_thickness);
+    // Pinned to the bottom edge of the screen, so a thick bar cannot spill
+    // past the margin and get clipped.
+    int thickness = s.status_bar_progress_thickness;
+    Rect track(content.x, bounds.bottom() - thickness - 2, content.w, thickness);
+    draw_progress_bar(canvas, track, state_.progress, thickness);
   }
 }
 
@@ -486,6 +495,10 @@ bool ReaderScreen::handle(const InputEvent& event) {
       bool forward = event.key == Key::PageForward;
       bool back = event.key == Key::PageBack;
       if (s.buttons_swapped) std::swap(forward, back);
+      // Held upside down, the top button is now the bottom one.
+      if (s.buttons_follow_rotation && (s.rotation == 2 || s.rotation == 3)) {
+        std::swap(forward, back);
+      }
       if (forward) {
         next_page();
         return true;

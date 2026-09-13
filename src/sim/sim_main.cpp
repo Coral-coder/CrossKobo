@@ -14,6 +14,7 @@
 #include "core/log.h"
 #include "core/paths.h"
 #include "core/str.h"
+#include "core/version.h"
 #include "gfx/font.h"
 #include "library/library.h"
 #include "notes/notes.h"
@@ -23,10 +24,6 @@
 #include "reader/reader.h"
 #include "reader/state.h"
 #include "ui/theme.h"
-
-namespace ck {
-const char* kVersion = "0.1.0 (simulator)";
-}
 
 using namespace ck;
 
@@ -171,7 +168,7 @@ int main(int argc, char** argv) {
     Recents::instance().touch(st);
   }
   Stats::instance().load();
-  Stats::instance().add_session(3600, 240);
+  Stats::instance().add_reading(3600, 240, true);
 
   app.push(make_home_screen());
   shot("home-classic");

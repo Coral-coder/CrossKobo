@@ -26,9 +26,6 @@ class View {
   // Milliseconds between on_tick() calls, or -1 for no timer.
   virtual int tick_ms() const { return -1; }
   virtual bool on_tick() { return false; }
-  // Views that manage their own panel updates (the note editor draws ink
-  // between frames) opt out of the automatic full-view flush.
-  virtual bool draws_own_updates() const { return false; }
   // Shown in the top bar unless the view draws its own.
   virtual std::string title() const { return ""; }
   // Set when the view wants the screen fully cleared before it draws.

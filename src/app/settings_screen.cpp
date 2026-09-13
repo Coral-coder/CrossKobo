@@ -13,6 +13,7 @@
 #include "core/log.h"
 #include "core/paths.h"
 #include "core/str.h"
+#include "core/version.h"
 #include "gfx/font.h"
 #include "library/library.h"
 #include "platform/device.h"
@@ -25,9 +26,6 @@
 #include "ui/widgets.h"
 
 namespace ck {
-
-extern const char* kVersion;
-
 namespace {
 
 class DynamicList : public ListView {
@@ -286,7 +284,7 @@ void push_notes_settings() {
 }
 
 void push_power_settings() {
-  enum { kSleep = 1, kPowerOff, kSleepScreen, kRestoreLight, kQuickResume, kSleepNow };
+  enum { kSleep = 1, kPowerOff, kSleepScreen, kRestoreLight, kSleepNow };
   auto build = []() {
     Settings& s = settings();
     std::vector<ListView::Item> items;
@@ -294,13 +292,13 @@ void push_power_settings() {
                         s.sleep_timeout_minutes ? format("%d min", s.sleep_timeout_minutes)
                                                 : "Never"));
     items.push_back(row(kPowerOff, "Power off after",
-                        s.power_off_hours ? format("%d h", s.power_off_hours) : "Never"));
+                        s.power_off_hours ? format("%d h asleep", s.power_off_hours) : "Never",
+                        "Saves the last of the battery on a device left in a bag"));
     const char* screens[] = {"Book cover", "Reading progress", "Statistics", "Custom image",
                              "Blank"};
     items.push_back(row(kSleepScreen, "Sleep screen", screens[(int)s.sleep_screen]));
     items.push_back(row(kRestoreLight, "Restore light on wake",
                         on_off(s.frontlight_restore_on_wake)));
-    items.push_back(row(kQuickResume, "Quick resume", on_off(s.quick_resume)));
     items.push_back(row(kSleepNow, "Sleep now"));
     return items;
   };
@@ -314,7 +312,6 @@ void push_power_settings() {
       case kRestoreLight:
         s.frontlight_restore_on_wake = !s.frontlight_restore_on_wake;
         break;
-      case kQuickResume: s.quick_resume = !s.quick_resume; break;
       case kSleepNow:
         s.save();
         App::instance().sleep_now();
@@ -549,8 +546,12 @@ class CalibrationScreen : public View {
     StatusBarInfo info;
     int top = draw_top_bar(canvas, bounds, "Touch and stylus test", info);
 
+    // Lay the bottom out first: two rows of toggles and a row of buttons,
+    // so the drawing area gets whatever is left rather than overlapping them.
+    int button_row_h = th.row_height + th.padding / 2;
+    int toggle_rows_h = 2 * (th.row_height + 6);
     Rect body(bounds.x + th.padding, bounds.y + top, bounds.w - 2 * th.padding,
-              bounds.h - top - 3 * th.row_height);
+              bounds.h - top - toggle_rows_h - button_row_h - th.padding);
     draw_panel(canvas, body, true);
 
     // Targets in the corners: tap them and see whether the marks land in
@@ -601,7 +602,7 @@ class CalibrationScreen : public View {
     for (int i = 0; i < 6; ++i) {
       int c = i % cols, r2 = i / cols;
       Rect button(bounds.x + th.padding + c * (w + th.padding / 2),
-                  y + r2 * (th.row_height + 4), w, th.row_height);
+                  y + r2 * (th.row_height + 6), w, th.row_height);
       draw_button(canvas, button, format("%s: %s", toggles[i].label, on_off(toggles[i].value)),
                   toggles[i].value ? ButtonStyle::Primary : ButtonStyle::Normal);
       hits_.add(button, toggles[i].id);

@@ -159,11 +159,11 @@ void Stats::save() const {
   j.save_file(paths().stats_file(), true);
 }
 
-void Stats::add_session(int64_t seconds, int pages) {
+void Stats::add_reading(int64_t seconds, int pages, bool new_session) {
   if (seconds < 5 && pages == 0) return;  // ignore accidental opens
   total_seconds += seconds;
   pages_turned += pages;
-  ++sessions;
+  if (new_session) ++sessions;
   longest_session = std::max(longest_session, seconds);
   if (first_use == 0) first_use = wall_seconds();
 

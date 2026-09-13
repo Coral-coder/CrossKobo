@@ -17,6 +17,7 @@
 #include "core/log.h"
 #include "core/paths.h"
 #include "core/str.h"
+#include "core/version.h"
 #include "library/library.h"
 #include "platform/device.h"
 #include "platform/input.h"
@@ -25,10 +26,6 @@
 #include "platform/system.h"
 #include "reader/state.h"
 #include "ui/theme.h"
-
-namespace ck {
-const char* kVersion = "0.1.0";
-}
 
 namespace {
 

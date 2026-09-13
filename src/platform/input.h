@@ -99,10 +99,6 @@ class Input {
   void drain();
   bool has_pen() const { return pen_fd_count_ > 0; }
 
-  // Pen strokes are sampled far faster than the UI loop runs, so the notes
-  // editor asks for every raw sample between two frames.
-  std::vector<InputEvent> take_pen_samples();
-
   // Diagnostics for the calibration screen.
   std::string describe_devices() const;
 
@@ -134,7 +130,6 @@ class Input {
 
   std::vector<Device> devices_;
   std::vector<InputEvent> queue_;
-  std::vector<InputEvent> pen_samples_;
   int pen_fd_count_ = 0;
 
   TouchTransform touch_tf_;

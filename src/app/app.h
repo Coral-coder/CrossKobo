@@ -24,6 +24,11 @@ class App {
   View* top();
   size_t depth() const { return stack_.size(); }
 
+  // Dispatches one input event exactly as the main loop does, then
+  // repaints if anything changed. The loop and the test suite share this
+  // so both take the same path through the code.
+  void pump(const InputEvent& event);
+
   // Marks the screen as needing a repaint. `hint` upgrades the refresh mode
   // for this frame (the strongest hint wins).
   void invalidate(Refresh hint = Refresh::Auto);
@@ -53,6 +58,7 @@ class App {
  private:
   App() = default;
   void draw_frame();
+  void release_retired();
   void draw_toast(Canvas& canvas);
   void handle_global(const InputEvent& event);
   void check_idle();
@@ -62,6 +68,11 @@ class App {
   void apply_settings();
 
   std::vector<ViewPtr> stack_;
+  // Views popped during event handling are parked here and released at the
+  // top of the next loop iteration: a row's callback usually belongs to the
+  // very view being popped, and destroying it mid-callback would pull the
+  // ground out from under itself.
+  std::vector<ViewPtr> retired_;
   bool simulated_ = false;
   bool quit_requested_ = false;
   int exit_code_ = 0;

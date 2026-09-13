@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 
 BIN="${1:-build-arm/crosskobo}"
-VERSION="$(sed -n 's/^const char\* kVersion = "\([^"]*\)".*/\1/p' src/main.cpp | head -1)"
+VERSION="$(sed -n 's/^const char\* kVersion = "\([^"]*\)".*/\1/p' src/core/version.cpp | head -1)"
 [ -n "${VERSION}" ] || VERSION="0.0.0"
 
 if [ ! -f "${BIN}" ]; then

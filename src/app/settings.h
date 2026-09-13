@@ -28,7 +28,6 @@ struct Settings {
   bool embedded_style = true;        // honour the book's own CSS
   bool force_paragraph_indent = false;
   bool extra_paragraph_spacing = false;
-  bool text_antialiasing = true;
   ImageRendering image_rendering = ImageRendering::Color;
 
   // ----------------------------------------------------------- reader ui
@@ -63,14 +62,13 @@ struct Settings {
 
   // ---------------------------------------------------------------- power
   int sleep_timeout_minutes = 15;
-  int power_off_hours = 0;           // 0 = never
+  int power_off_hours = 0;           // hours asleep before powering off; 0 = never
   SleepScreen sleep_screen = SleepScreen::Cover;
   std::string sleep_custom_image;
   bool frontlight_restore_on_wake = true;
   int frontlight_brightness = 20;
   int frontlight_warmth = 0;
   bool frontlight_on = true;
-  bool quick_resume = true;
 
   // --------------------------------------------------------------- device
   UiTheme theme = UiTheme::Classic;
@@ -88,6 +86,9 @@ struct Settings {
 
   // ------------------------------------------------------------ interface
   void load();
+  // Seeds settings that depend on which device this is. Called when there
+  // is no settings file yet, so a calibration the user makes later sticks.
+  void apply_device_defaults();
   void save() const;
   Json to_json() const;
   void from_json(const Json& j);

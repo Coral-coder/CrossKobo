@@ -5,6 +5,7 @@
 
 #include "core/log.h"
 #include "core/paths.h"
+#include "platform/device.h"
 
 namespace ck {
 namespace {
@@ -57,7 +58,6 @@ Json Settings::to_json() const {
   j["embeddedStyle"] = Json(embedded_style);
   j["forceParagraphIndents"] = Json(force_paragraph_indent);
   j["extraParagraphSpacing"] = Json(extra_paragraph_spacing);
-  j["textAntiAliasing"] = Json(text_antialiasing);
   j["imageRendering"] = Json((int)image_rendering);
 
   j["focusReadingEnabled"] = Json(focus_reading);
@@ -95,7 +95,6 @@ Json Settings::to_json() const {
   j["frontlightBrightness"] = Json(frontlight_brightness);
   j["frontlightWarmth"] = Json(frontlight_warmth);
   j["frontlightOn"] = Json(frontlight_on);
-  j["quickResume"] = Json(quick_resume);
 
   j["uiTheme"] = Json((int)theme);
   j["screenInverted"] = Json(night_mode);
@@ -115,15 +114,17 @@ Json Settings::to_json() const {
 void Settings::from_json(const Json& j) {
   if (!j.is_object()) return;
   font_family = j.get_string("fontFamily", font_family);
-  font_size_pt = std::max(8, std::min(28, j.get_int("fontSize", font_size_pt)));
+  // Keep the accepted range identical to what the settings screen
+  // offers, so a hand-edited file cannot reach a size the UI then refuses
+  // to show.
+  font_size_pt = std::max(8, std::min(24, j.get_int("fontSize", font_size_pt)));
   line_spacing = std::max(100, std::min(220, j.get_int("lineSpacing", line_spacing)));
-  screen_margin = std::max(0, std::min(180, j.get_int("screenMargin", screen_margin)));
+  screen_margin = std::max(0, std::min(160, j.get_int("screenMargin", screen_margin)));
   alignment = enum_from(j, "paragraphAlignment", alignment, 2);
   hyphenation = j.get_bool("hyphenationEnabled", hyphenation);
   embedded_style = j.get_bool("embeddedStyle", embedded_style);
   force_paragraph_indent = j.get_bool("forceParagraphIndents", force_paragraph_indent);
   extra_paragraph_spacing = j.get_bool("extraParagraphSpacing", extra_paragraph_spacing);
-  text_antialiasing = j.get_bool("textAntiAliasing", text_antialiasing);
   image_rendering = enum_from(j, "imageRendering", image_rendering, 3);
 
   focus_reading = j.get_bool("focusReadingEnabled", focus_reading);
@@ -171,7 +172,6 @@ void Settings::from_json(const Json& j) {
       std::max(0, std::min(100, j.get_int("frontlightBrightness", frontlight_brightness)));
   frontlight_warmth = std::max(0, std::min(100, j.get_int("frontlightWarmth", frontlight_warmth)));
   frontlight_on = j.get_bool("frontlightOn", frontlight_on);
-  quick_resume = j.get_bool("quickResume", quick_resume);
 
   theme = enum_from(j, "uiTheme", theme, 3);
   night_mode = j.get_bool("screenInverted", night_mode);
@@ -189,10 +189,23 @@ void Settings::from_json(const Json& j) {
   log_debug = j.get_bool("logDebug", log_debug);
 }
 
+void Settings::apply_device_defaults() {
+  const DeviceInfo& dev = device();
+  // The Libra Colour's touch panel reports Y inverted relative to the
+  // display; other models differ, and the calibration screen exists for
+  // the ones nobody has checked.
+  if (dev.codename.find("monza") != std::string::npos) {
+    touch_transform.mirror_y = true;
+  }
+  if (!dev.has_frontlight) frontlight_on = false;
+}
+
 void Settings::load() {
   Json j;
   if (!Json::parse_file(paths().settings_file(), j)) {
-    CK_LOGI("settings: no settings file yet, using defaults");
+    CK_LOGI("settings: no settings file yet, using defaults for %s",
+            device().codename.c_str());
+    apply_device_defaults();
     return;
   }
   from_json(j);

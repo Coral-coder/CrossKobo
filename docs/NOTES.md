@@ -33,6 +33,11 @@ can live with the lag, turn off *Fast ink refresh* in the notebook menu or
 last seen, so resting a hand on the page does not draw. It can be turned
 off in *Settings → Notes*.
 
+**No stylus?** A Libra Colour reports a digitiser whether or not you own a
+stylus, so CrossKobo lets you draw with a finger until a stylus is actually
+used. From that point on, touch is treated as a palm and only the pen
+draws.
+
 ## Templates
 
 Blank, lined, grid, dots and Cornell. Set the default for new pages in

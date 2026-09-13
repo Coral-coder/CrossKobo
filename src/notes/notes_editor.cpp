@@ -64,7 +64,6 @@ class NoteEditor : public View {
 
   void on_hide() override { save_if_dirty(); }
 
-  bool draws_own_updates() const override { return true; }
   Refresh refresh_hint() const override { return Refresh::Image; }
   std::string title() const override { return notebook_->title(); }
 
@@ -624,8 +623,12 @@ bool NoteEditor::handle(const InputEvent& event) {
   }
 
   // ---------------------------------------------------------- touch input
-  bool pen_recently_used = now_ms() - last_pen_ms_ < kPalmRejectMs;
-  bool touch_draws = !Input::instance().has_pen();
+  bool pen_recently_used = last_pen_ms_ > 0 && now_ms() - last_pen_ms_ < kPalmRejectMs;
+  // Finger drawing is allowed on devices with no digitiser, and on devices
+  // that have one until the stylus is actually used - a Libra Colour
+  // reports a digitiser whether or not its owner has a stylus, and nobody
+  // should be locked out of their own notebooks by that.
+  bool touch_draws = !Input::instance().has_pen() || last_pen_ms_ == 0;
 
   switch (event.type) {
     case EventType::Tap: {
