@@ -10,6 +10,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/watcher.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -396,6 +397,29 @@ int main(int argc, char** argv) {
   app.render_now();
   CHECK(app.depth() == 2);
   app.pop();
+
+  // The watcher's trigger names are what appears in the stock Kobo library,
+  // so a mismatch between the shipped files and the names it reacts to
+  // means a library entry that does nothing.
+  {
+    CHECK(watcher_command_for("CrossKobo Catalogues.txt") == "--catalogues");
+    CHECK(watcher_command_for("CrossKobo Shelfmark.txt") == "--catalogue Shelfmark");
+    CHECK(watcher_command_for("CrossKobo.txt").empty());
+    CHECK(watcher_command_for("Some Book.epub") == "\xff");
+    CHECK(watcher_command_for("crosskobo catalogues.txt") == "\xff");  // case matters
+    CHECK(watcher_trigger_names().size() == 3);
+
+    // Writing them twice leaves the reader's edits alone.
+    std::string dir = std::string(root) + "/triggers";
+    fs::mkdir_p(dir);
+    CHECK(write_trigger_files(dir));
+    std::string path = dir + "/CrossKobo Catalogues.txt";
+    CHECK(fs::exists(path));
+    CHECK(fs::write_file_atomic(path, "mine"));
+    CHECK(write_trigger_files(dir));
+    std::string body;
+    CHECK(fs::read_file(path, body) && body == "mine");
+  }
 
   // Device classification. The Libra Colour's panel reports a stylus tool
   // AND multitouch on one node; classifying it as a digitiser alone is what

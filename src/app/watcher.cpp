@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -93,30 +94,58 @@ bool write_trigger_files(const std::string& dir) {
   return all;
 }
 
+namespace {
+
+// Waits for the user partition to come back, which it does every time the
+// stock software finishes sharing the drive with a computer.
+bool wait_for_mount(const std::string& dir) {
+  for (int i = 0; i < 600; ++i) {
+    std::string mounts;
+    if (fs::read_file("/proc/mounts", mounts) &&
+        mounts.find(" " + dir + " ") != std::string::npos) {
+      return true;
+    }
+    sleep_ms(1000);
+  }
+  return false;
+}
+
+}  // namespace
+
 int run_watcher(const std::string& launcher) {
   const std::string dir = paths().onboard;
-  write_trigger_files(dir);
 
   int fd = inotify_init();
   if (fd < 0) {
     CK_LOGE("watcher: inotify_init failed: %s", strerror(errno));
     return 1;
   }
-  // Watch the directory rather than the files: nickel replaces a file it
-  // has indexed, and a watch on the inode would go quiet. IN_OPEN on the
-  // directory reports opens of everything in it, with the name.
-  int wd = inotify_add_watch(fd, dir.c_str(), IN_OPEN);
-  if (wd < 0) {
-    CK_LOGE("watcher: cannot watch %s: %s", dir.c_str(), strerror(errno));
-    close(fd);
-    return 1;
-  }
-  CK_LOGI("watcher: watching %s for %zu triggers", dir.c_str(),
-          watcher_trigger_names().size());
 
   int64_t last_launch = 0;
   std::vector<char> buffer(4096);
+  int wd = -1;
   while (true) {
+    if (wd < 0) {
+      // Watch the directory rather than the files: the stock software
+      // replaces a file it has indexed, and a watch on the inode would go
+      // quiet. IN_OPEN on the directory reports opens of everything in it,
+      // with the name.
+      write_trigger_files(dir);
+      wd = inotify_add_watch(fd, dir.c_str(), IN_OPEN | IN_UNMOUNT);
+      if (wd < 0) {
+        CK_LOGW("watcher: cannot watch %s (%s), waiting for the mount",
+                dir.c_str(), strerror(errno));
+        if (!wait_for_mount(dir)) {
+          CK_LOGE("watcher: %s never came back", dir.c_str());
+          close(fd);
+          return 1;
+        }
+        continue;
+      }
+      CK_LOGI("watcher: watching %s for %zu triggers", dir.c_str(),
+              watcher_trigger_names().size());
+    }
+
     ssize_t n = read(fd, buffer.data(), buffer.size());
     if (n <= 0) {
       if (errno == EINTR) continue;
@@ -126,6 +155,16 @@ int run_watcher(const std::string& launcher) {
     for (ssize_t offset = 0; offset + (ssize_t)sizeof(struct inotify_event) <= n;) {
       struct inotify_event* event = (struct inotify_event*)(buffer.data() + offset);
       offset += (ssize_t)sizeof(struct inotify_event) + (ssize_t)event->len;
+      // Sharing the drive over USB unmounts the partition, which takes the
+      // watch with it. Without re-arming, the library entries would stop
+      // working after the first time the Kobo was plugged into a computer.
+      if (event->mask & (IN_UNMOUNT | IN_IGNORED)) {
+        CK_LOGI("watcher: %s went away, waiting for it to come back", dir.c_str());
+        inotify_rm_watch(fd, wd);
+        wd = -1;
+        wait_for_mount(dir);
+        break;
+      }
       if (event->len == 0) continue;
       std::string name(event->name);
       std::string args = watcher_command_for(name);
@@ -139,7 +178,7 @@ int run_watcher(const std::string& launcher) {
       }
     }
   }
-  inotify_rm_watch(fd, wd);
+  if (wd >= 0) inotify_rm_watch(fd, wd);
   close(fd);
   return 0;
 }
