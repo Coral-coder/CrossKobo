@@ -8,7 +8,7 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.1, not yet tested on hardware.**
+> **Status: version 0.1.2, not yet tested on hardware.**
 > Every part of this has been built and exercised on a host machine and on
 > a cross-compiled ARM build under emulation, but nobody has yet run it on
 > a real Kobo. Read [docs/INSTALL.md](docs/INSTALL.md) before installing —

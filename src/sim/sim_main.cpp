@@ -88,9 +88,18 @@ void draw_sample_notes(Notebook& notebook) {
   add({{700, 300}, {760, 420}, {820, 300}, {880, 420}}, Color::rgb(0x0F8A2E), 6);
 }
 
-// A tiny library so the home and library screens have something in them.
+// A small library so the home and library screens have something in them.
+// The EPUB the test suite builds is copied in when it is around, because a
+// real book with covers, styling and colour plates makes for far more
+// representative screenshots than a text file.
 void make_fixture_library(const std::string& root) {
   fs::mkdir_p(root);
+  for (const char* candidate : {"out/fixture.epub", "../out/fixture.epub"}) {
+    if (!fs::exists(candidate)) continue;
+    std::string target = fs::join_path(root, "The Colour of Ink.epub");
+    if (!fs::exists(target)) fs::copy_file(candidate, target);
+    break;
+  }
   const char* kFiles[] = {"A Short Walk.txt", "Notes on Colour.txt", "The Kaleido Papers.txt"};
   const char* kBodies[] = {
       "A Short Walk\n\nThe path turned east at the old wall, where the light was already "
@@ -98,7 +107,11 @@ void make_fixture_library(const std::string& root) {
       "Notes on Colour\n\nKaleido panels place a colour filter over the same greyscale "
       "ink, which is why colour resolves at half the linear resolution.\n\nThe practical "
       "consequence is that colour wants larger shapes.\n",
-      "The Kaleido Papers\n\nChapter one.\n\n" };
+      "The Kaleido Papers\n\nKaleido 3 is a colour filter array laid over the same "
+      "microcapsule ink that renders black and white, which is why colour resolves at "
+      "half the linear resolution and why saturation is inherently gentle.\n\n"
+      "The practical consequence for a reader is that colour wants larger shapes: a "
+      "cover, a plate, a highlighter stroke. Fine coloured detail reads as noise.\n"};
   for (int i = 0; i < 3; ++i) {
     std::string path = fs::join_path(root, kFiles[i]);
     if (!fs::exists(path)) fs::write_file_atomic(path, kBodies[i]);

@@ -93,6 +93,19 @@ need hardware. They are written defensively — every ioctl and sysfs write
 is checked and logged, and failure degrades rather than crashes — and the
 launcher has a crash-loop guard behind them.
 
+## Known limits
+
+- A chapter is laid out in one pass, so a book that puts five megabytes of
+  text in a single XHTML file will pause for a few seconds when that
+  chapter opens. Normal books split per chapter and paginate instantly.
+- Notebook pages are a fixed pixel grid, adopted from the screen the
+  notebook was created on, and scaled to fit elsewhere. Ink is never
+  re-flowed.
+- Tables are laid out as stacked cells rather than real columns.
+- No network features, so no OPDS, sync or dictionaries; and no PDF
+  reading (exporting notes to PDF is a different problem, and is
+  supported).
+
 ## Adding a device
 
 `src/platform/device.cpp` holds the model table, keyed on the codename

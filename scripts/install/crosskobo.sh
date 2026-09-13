@@ -18,6 +18,8 @@ ONBOARD="/mnt/onboard"
 DATA_DIR="${ONBOARD}/.crosskobo"
 BIN="${INSTALL_DIR}/crosskobo"
 CRASH_FILE="${INSTALL_DIR}/crash-count"
+# Until the user partition is mounted the log has to live on the rootfs;
+# once it is, logging moves to the drive so it can be read from a computer.
 LOG="${INSTALL_DIR}/boot.log"
 MAX_CRASHES=3
 
@@ -47,6 +49,16 @@ done
 if ! grep -q " ${ONBOARD} " /proc/mounts 2>/dev/null; then
     log "onboard never mounted; standing down"
     exit 0
+fi
+
+# Move the log somewhere the user can actually read it.
+mkdir -p "${DATA_DIR}" 2>/dev/null
+if [ -d "${DATA_DIR}" ]; then
+    if [ -f "${LOG}" ]; then
+        cat "${LOG}" >> "${DATA_DIR}/boot.log" 2>/dev/null && rm -f "${LOG}"
+    fi
+    LOG="${DATA_DIR}/boot.log"
+    log "logging to the user partition"
 fi
 
 # ---------------------------------------------------------------------------

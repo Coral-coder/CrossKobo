@@ -7,6 +7,7 @@
 #include "core/log.h"
 #include "core/str.h"
 #include "epub/xml.h"
+#include "reader/state.h"
 
 namespace ck {
 namespace {
@@ -504,17 +505,6 @@ uint64_t Book::spine_size(int index) const {
   return zip_.entry_size(fs::normalize(fs::join_path(opf_dir_, spine_[index].href)));
 }
 
-std::string Book::cache_key() const {
-  // File size plus name: stable across a re-copy of the same book, and
-  // distinct between two books that happen to share a title.
-  uint64_t size = fs::file_size(path_);
-  std::string base = fs::basename(path_);
-  uint32_t hash = 2166136261u;
-  for (char c : base) {
-    hash ^= (uint8_t)c;
-    hash *= 16777619u;
-  }
-  return ck::format("%08x_%llu", hash, (unsigned long long)size);
-}
+std::string Book::cache_key() const { return book_state_key(path_); }
 
 }  // namespace ck

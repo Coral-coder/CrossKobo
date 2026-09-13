@@ -26,6 +26,17 @@ std::string today_key() {
 
 }  // namespace
 
+std::string book_state_key(const std::string& path) {
+  uint64_t size = fs::file_size(path);
+  std::string base = fs::basename(path);
+  uint32_t hash = 2166136261u;
+  for (char c : base) {
+    hash ^= (uint8_t)c;
+    hash *= 16777619u;
+  }
+  return format("%08x_%llu", hash, (unsigned long long)size);
+}
+
 std::string BookState::file_for(const std::string& key) {
   return paths().data + "/books/" + key + ".json";
 }

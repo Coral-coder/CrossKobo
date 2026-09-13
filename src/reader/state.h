@@ -7,6 +7,10 @@
 
 namespace ck {
 
+// Identity of a book for state and cache purposes: stable across a re-copy
+// of the same file, and distinct between two books that share a title.
+std::string book_state_key(const std::string& path);
+
 struct Bookmark {
   int spine = 0;
   int block = 0;

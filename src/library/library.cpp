@@ -38,17 +38,6 @@ bool is_noise_dir(const std::string& name) {
   return false;
 }
 
-std::string state_key_for(const std::string& path) {
-  uint64_t size = fs::file_size(path);
-  std::string base = fs::basename(path);
-  uint32_t hash = 2166136261u;
-  for (char c : base) {
-    hash ^= (uint8_t)c;
-    hash *= 16777619u;
-  }
-  return format("%08x_%llu", hash, (unsigned long long)size);
-}
-
 }  // namespace
 
 bool is_readable_book(const std::string& path) {
@@ -78,7 +67,7 @@ std::vector<LibraryEntry> scan_library(const std::string& dir, bool show_hidden)
     // Reading state also carries the real title and author, saved the first
     // time the book was opened.
     Json j;
-    if (Json::parse_file(BookState::file_for(state_key_for(e.path)), j) && j.is_object()) {
+    if (Json::parse_file(BookState::file_for(book_state_key(e.path)), j) && j.is_object()) {
       std::string title = j.get_string("title");
       if (!title.empty()) entry.name = title;
       entry.author = j.get_string("author");
@@ -251,7 +240,7 @@ class LibraryScreen : public ListView {
           break;
         case kMarkRead: {
           // Flip the flag in the saved state without opening the book.
-          std::string key = state_key_for(entry.path);
+          std::string key = book_state_key(entry.path);
           Json j;
           Json::parse_file(BookState::file_for(key), j);
           if (!j.is_object()) j = Json::object();
@@ -312,7 +301,7 @@ std::map<std::string, std::shared_ptr<Canvas>> g_cache;
 
 std::string cache_path(const std::string& book_path, int w, int h) {
   return format("%s/covers/%s_%dx%d.png", paths().cache_dir().c_str(),
-                state_key_for(book_path).c_str(), w, h);
+                book_state_key(book_path).c_str(), w, h);
 }
 
 }  // namespace
