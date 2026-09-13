@@ -17,6 +17,7 @@
 #include "core/str.h"
 #include "gfx/font.h"
 #include "library/library.h"
+#include "net/server.h"
 #include "notes/notes.h"
 #include "platform/input.h"
 #include "platform/screen.h"
@@ -326,6 +327,13 @@ int main(int argc, char** argv) {
   app.pump(edge_swipe(SwipeDir::Up, kHeight / 2, kHeight / 3));
   CHECK(app.depth() == 2);
   app.pop_to_root();
+
+  // The transfer screen draws without a network, and without starting a
+  // server: it explains what is missing instead.
+  app.push(make_transfer_screen());
+  app.render_now();
+  CHECK(!TransferServer::instance().running());
+  app.pop();
 
   // The catalogue list draws its empty state, and adding one walks two
   // keyboards; the browser itself needs a server, so it is not pushed here.

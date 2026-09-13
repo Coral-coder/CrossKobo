@@ -519,6 +519,7 @@ ViewPtr make_settings_screen() {
     kControls,
     kLibrary,
     kCatalogues,
+    kTransfer,
     kNetwork,
     kAbout,
     kUpdate,
@@ -534,6 +535,8 @@ ViewPtr make_settings_screen() {
   items.push_back(row(kPower, "Power and sleep"));
   items.push_back(row(kControls, "Controls"));
   items.push_back(row(kLibrary, "Library"));
+  items.push_back(row(kTransfer, "Send over Wi-Fi", "",
+                      "Opens a page a browser on the same network can use"));
   items.push_back(row(kCatalogues, "Catalogues",
                       settings().catalogues.empty()
                           ? ""
@@ -567,6 +570,7 @@ ViewPtr make_settings_screen() {
       case kControls: push_controls_settings(); break;
       case kLibrary: push_library_settings(); break;
       case kCatalogues: App::instance().push(make_catalogue_screen()); break;
+      case kTransfer: App::instance().push(make_transfer_screen()); break;
       case kNetwork: App::instance().push(make_network_screen()); break;
       case kAbout: App::instance().push(make_about_screen()); break;
       case kRestart:

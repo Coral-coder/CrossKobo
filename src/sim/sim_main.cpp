@@ -216,6 +216,8 @@ int main(int argc, char** argv) {
   App::instance().pop();
   show(make_library_screen(root), "library-aero");
   App::instance().pop();
+  show(make_transfer_screen(), "transfer-aero");
+  App::instance().pop();
   show(make_catalogue_screen(), "catalogues-aero");
   App::instance().pop();
   show(make_settings_screen(), "settings-aero");

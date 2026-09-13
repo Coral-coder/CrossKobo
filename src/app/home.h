@@ -26,5 +26,7 @@ ViewPtr make_calibration_screen();
 // it can fix a panel whose taps land nowhere near where they are drawn.
 // Reachable with both page buttons pressed together, from any screen.
 ViewPtr make_touch_wizard();
+// Wireless transfer: the address and key for a browser on the same network.
+ViewPtr make_transfer_screen();
 
 }  // namespace ck
