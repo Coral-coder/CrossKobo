@@ -65,8 +65,64 @@ grep -q 'MAX_CRASHES' "${WORK}/rootfs/usr/local/crosskobo/crosskobo.sh"
 check $? "launcher has a crash-loop guard"
 
 # ---------------------------------------------------------------------------
+# Dry-run the launcher's safety paths against the extracted payload, with
+# the device-specific bits redirected into the sandbox. These are the paths
+# that decide whether a bad build can lock somebody out of their Kobo.
+echo "launcher safety paths:"
+launcher="${WORK}/rootfs/usr/local/crosskobo/crosskobo.sh"
+
+# 1. The user partition never appears: stand down, quietly and quickly.
+mkdir -p "${WORK}/case1/rootfs"
+cp -r "${WORK}/rootfs/usr" "${WORK}/case1/rootfs/"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case1/rootfs/usr/local/crosskobo\"#" \
+    -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case1/absent\"#" \
+    -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case1/absent/.crosskobo\"#" \
+    -e 's/while \[ ${i} -lt 120 \]/while [ ${i} -lt 2 ]/' \
+    "${launcher}" > "${WORK}/case1/run.sh"
+sh "${WORK}/case1/run.sh"
+check $? "stands down when the user partition never mounts"
+grep -q "standing down" "${WORK}/case1/rootfs/usr/local/crosskobo/boot.log"
+check $? "and says so in the boot log"
+
+# 2. The DISABLE flag is present: leave the stock UI alone.
+mkdir -p "${WORK}/case2/rootfs" "${WORK}/case2/board/.crosskobo"
+cp -r "${WORK}/rootfs/usr" "${WORK}/case2/rootfs/"
+: > "${WORK}/case2/board/.crosskobo/DISABLE"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case2/rootfs/usr/local/crosskobo\"#" \
+    -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case2/board\"#" \
+    -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case2/board/.crosskobo\"#" \
+    -e 's#grep -q " ${ONBOARD} " /proc/mounts#test -d "${ONBOARD}"#g' \
+    "${launcher}" > "${WORK}/case2/run.sh"
+sh "${WORK}/case2/run.sh"
+check $? "honours the DISABLE flag"
+grep -q "DISABLE flag present" "${WORK}/case2/board/.crosskobo/boot.log"
+check $? "logs to the user partition once it is mounted"
+
+# 3. Three failed starts already recorded: disable itself rather than loop.
+mkdir -p "${WORK}/case3/rootfs" "${WORK}/case3/board"
+cp -r "${WORK}/rootfs/usr" "${WORK}/case3/rootfs/"
+echo 3 > "${WORK}/case3/rootfs/usr/local/crosskobo/crash-count"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/case3/rootfs/usr/local/crosskobo\"#" \
+    -e "s#^ONBOARD=.*#ONBOARD=\"${WORK}/case3/board\"#" \
+    -e "s#^DATA_DIR=.*#DATA_DIR=\"${WORK}/case3/board/.crosskobo\"#" \
+    -e 's#grep -q " ${ONBOARD} " /proc/mounts#test -d "${ONBOARD}"#g' \
+    "${launcher}" > "${WORK}/case3/run.sh"
+sh "${WORK}/case3/run.sh"
+check $? "crash-loop guard exits cleanly"
+[ -f "${WORK}/case3/board/.crosskobo/DISABLE" ]
+check $? "crash-loop guard writes the DISABLE flag"
+[ ! -f "${WORK}/case3/rootfs/usr/local/crosskobo/crash-count" ]
+check $? "crash-loop guard clears the counter"
+
+# ---------------------------------------------------------------------------
 echo "install zip:"
-ZIP="$(ls release/CrossKobo-*-install.zip | grep -v fw5 | head -1)"
+ZIP=""
+for f in release/CrossKobo-*-install.zip; do
+    case "${f}" in
+        *fw5*) continue ;;
+    esac
+    ZIP="${f}"
+done
 unzip -l "${ZIP}" | grep -q '\.kobo/KoboRoot\.tgz'
 check $? "zip places KoboRoot.tgz in .kobo/"
 unzip -l "${ZIP}" | grep -q 'READ-ME-FIRST\.txt'
@@ -75,7 +131,13 @@ check $? "zip carries instructions"
 # ---------------------------------------------------------------------------
 echo "uninstall payload:"
 mkdir -p "${WORK}/unroot"
-UNZIP_FILE="$(ls release/CrossKobo-*-uninstall.zip | grep -v fw5 | head -1)"
+UNZIP_FILE=""
+for f in release/CrossKobo-*-uninstall.zip; do
+    case "${f}" in
+        *fw5*) continue ;;
+    esac
+    UNZIP_FILE="${f}"
+done
 unzip -q -o "${UNZIP_FILE}" -d "${WORK}/unzip"
 tar -xzf "${WORK}/unzip/.kobo/KoboRoot.tgz" -C "${WORK}/unroot"
 [ -x "${WORK}/unroot/etc/init.d/on-animator.sh" ]
@@ -95,7 +157,10 @@ fi
 
 # ---------------------------------------------------------------------------
 echo "firmware 5 package:"
-FW5="$(ls release/CrossKobo-*-fw5-install.zip | head -1)"
+FW5=""
+for f in release/CrossKobo-*-fw5-install.zip; do
+    FW5="${f}"
+done
 unzip -q -o "${FW5}" -d "${WORK}/fw5"
 tar -tf "${WORK}/fw5/.kobo/update.tar" | grep -q '^driver.sh$'
 check $? "update.tar carries driver.sh"

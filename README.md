@@ -73,8 +73,12 @@ Full list: [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Install
 
-Download the release zip, unpack it to the root of the Kobo's USB drive,
-eject. The device installs CrossKobo and restarts by itself.
+Download `CrossKobo-0.1.2-install.zip` from the
+[latest release](https://github.com/Coral-coder/CrossKobo/releases/latest),
+unpack it to the root of the Kobo's USB drive, and eject. The device
+installs CrossKobo and restarts by itself. (Firmware 5.x devices want the
+`-fw5-install` package instead; *More → Settings → Device information* on
+the Kobo tells you which you have.)
 
 The full procedure, including how to get back to the stock software and
 what to do if something goes wrong, is in [docs/INSTALL.md](docs/INSTALL.md).

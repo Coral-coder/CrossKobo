@@ -96,7 +96,7 @@ jobs:
             sh -n "$f"
           done
           shellcheck -s sh -S warning scripts/install/*.sh scripts/install/crosskobo.init \
-            scripts/package.sh
+            scripts/package.sh tests/test_package.sh
 
       - name: Configure
         run: |
