@@ -14,6 +14,8 @@
 #include "platform/device.h"
 #include "platform/power.h"
 #include "platform/system.h"
+#include "platform/usbms.h"
+#include "app/home.h"
 #include "library/library.h"
 #include "reader/state.h"
 #include "ui/theme.h"
@@ -386,14 +388,19 @@ void App::check_usb() {
     return_to_kobo_ui();
     return;
   }
-  // Ask. The stock UI owns USB mass storage, so transferring files means
-  // handing control back to it; CrossKobo returns on the next boot.
-  if (confirm("USB connected",
-              "Switch to the Kobo UI so your computer can see the drive?\n\n"
-              "CrossKobo starts again next time you power on.",
-              "Switch", "Stay")) {
-    return_to_kobo_ui();
+  if (action == "mount") {
+    UsbMs& usb = UsbMs::instance();
+    settings().save();
+    if (usb.start()) {
+      push(make_usb_active_screen());
+    } else {
+      show_message("Could not share the drive", usb.last_error());
+    }
+    return;
   }
+  // Ask: share the drive from here, hand over to the stock software, or
+  // just charge.
+  push(make_usb_prompt_screen());
 }
 
 bool App::confirm(const std::string& title, const std::string& message,

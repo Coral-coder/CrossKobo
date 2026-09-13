@@ -259,6 +259,10 @@ int main(int argc, char** argv) {
   show(make_network_screen(), "wifi-connected");
   app.pop();
 
+  // The USB chooser, which is what a cable going in looks like.
+  show(make_usb_prompt_screen(), "usb-prompt");
+  app.pop();
+
   show(make_settings_screen(), "settings");
   app.pop();
   show(make_stats_screen(), "statistics");

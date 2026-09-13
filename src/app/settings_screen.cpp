@@ -21,6 +21,7 @@
 #include "platform/power.h"
 #include "platform/screen.h"
 #include "platform/system.h"
+#include "platform/usbms.h"
 #include "reader/state.h"
 #include "ui/list_view.h"
 #include "ui/theme.h"
@@ -325,7 +326,7 @@ void push_power_settings() {
 }
 
 void push_controls_settings() {
-  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kCalibrate };
+  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kShareNow, kCalibrate };
   auto build = []() {
     Settings& s = settings();
     std::vector<ListView::Item> items;
@@ -336,10 +337,15 @@ void push_controls_settings() {
     const char* zones[] = {"Standard", "Inverted", "Off"};
     items.push_back(row(kTapZones, "Tap zones", zones[(int)s.tap_zones]));
     items.push_back(row(kTapMenu, "Centre tap opens menu", on_off(s.tap_for_reader_menu)));
-    items.push_back(row(kUsb, "When USB is connected",
-                        s.usb_action == "ask" ? "Ask"
-                                              : (s.usb_action == "handover" ? "Switch to Kobo UI"
-                                                                            : "Ignore")));
+    const char* usb_label = "Ask";
+    if (s.usb_action == "handover") usb_label = "Switch to Kobo UI";
+    if (s.usb_action == "mount") usb_label = "Share the drive";
+    if (s.usb_action == "ignore") usb_label = "Just charge";
+    items.push_back(row(kUsb, "When USB is connected", usb_label));
+    items.push_back(row(kShareNow, "Share the drive now", "",
+                        UsbMs::instance().blocker().empty()
+                            ? "Needs the cable plugged in"
+                            : UsbMs::instance().blocker()));
     items.push_back(row(kCalibrate, "Touch and stylus test",
                         "", "Check where taps land and fix mirrored axes"));
     return items;
@@ -352,9 +358,36 @@ void push_controls_settings() {
       case kTapZones: s.tap_zones = (TapZones)(((int)s.tap_zones + 1) % 3); break;
       case kTapMenu: s.tap_for_reader_menu = !s.tap_for_reader_menu; break;
       case kUsb:
-        s.usb_action = s.usb_action == "ask" ? "handover"
-                                             : (s.usb_action == "handover" ? "ignore" : "ask");
+        if (s.usb_action == "ask") {
+          s.usb_action = "mount";
+        } else if (s.usb_action == "mount") {
+          s.usb_action = "handover";
+        } else if (s.usb_action == "handover") {
+          s.usb_action = "ignore";
+        } else {
+          s.usb_action = "ask";
+        }
         break;
+      case kShareNow: {
+        UsbMs& usb = UsbMs::instance();
+        std::string blocker = usb.blocker();
+        if (!blocker.empty()) {
+          App::instance().show_message("Cannot share the drive", blocker);
+          return;
+        }
+        if (!sys::usb_plugged()) {
+          App::instance().show_message("Cannot share the drive",
+                                       "Plug the device into a computer first.");
+          return;
+        }
+        s.save();
+        if (usb.start()) {
+          App::instance().push(make_usb_active_screen());
+        } else {
+          App::instance().show_message("Could not share the drive", usb.last_error());
+        }
+        return;
+      }
       case kCalibrate:
         App::instance().push(make_calibration_screen());
         return;
