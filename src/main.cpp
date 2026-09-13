@@ -12,6 +12,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/watcher.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -40,6 +41,7 @@ void print_usage() {
       "  --catalogues     open the OPDS catalogue list straight away\n"
       "  --catalogue NAME open a saved catalogue by name\n"
       "  --return-to-kobo hand back to the stock UI on exit (menu launches)\n"
+      "  --watch          run as the launcher watcher and nothing else\n"
       "  --keep-nickel    do not stop the stock Kobo UI (debugging over ssh)\n"
       "  --debug          verbose logging\n"
       "  --version        print the version and exit\n",
@@ -60,6 +62,7 @@ int main(int argc, char** argv) {
   bool catalogues = false;
   std::string catalogue;
   bool return_to_kobo = false;
+  bool watch = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -89,6 +92,8 @@ int main(int argc, char** argv) {
     } else if (arg == "--catalogue" && i + 1 < argc) {
       catalogue = argv[++i];
       catalogues = true;
+    } else if (arg == "--watch") {
+      watch = true;
     } else if (arg == "--return-to-kobo") {
       return_to_kobo = true;
     } else if (arg == "--keep-nickel") {
@@ -123,6 +128,15 @@ int main(int argc, char** argv) {
   log_init(paths().log_file(), debug ? LogLevel::Debug : LogLevel::Info);
   CK_LOGI("crosskobo %s starting", kVersion);
   CK_LOGI("device: %s", device().describe().c_str());
+
+  // The watcher never touches the screen or the stock software: it waits
+  // for one of CrossKobo's files to be opened from the Kobo library and
+  // starts the real thing. Nothing below this applies to it.
+  if (watch) {
+    std::string launcher = fs::join_path(paths().install, "menu-launch.sh");
+    if (!fs::exists(launcher)) launcher = "/usr/local/crosskobo/menu-launch.sh";
+    return run_watcher("/bin/sh " + launcher);
+  }
 
   // The user's escape hatch: if this file exists we are not supposed to be
   // running at all, so get out of the way immediately.

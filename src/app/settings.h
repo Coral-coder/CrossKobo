@@ -102,11 +102,22 @@ struct Settings {
   // so this is Basic authentication for a home server - not a secret store.
   struct Catalogue {
     std::string name;
-    std::string url;
+    std::string url;       // a browsable feed; may be empty
     std::string user;
     std::string password;
+    // A search endpoint, in the same form OPDS advertises its own:
+    // anything with {searchTerms} in it. Set this and Search uses it even
+    // when the feed does not offer one - which is how a server with its own
+    // search format, or a mirror list of them, gets used as it is. A
+    // catalogue with only a search opens straight into the keyboard.
+    std::string search;
+
+    bool search_only() const { return url.empty() && !search.empty(); }
   };
   std::vector<Catalogue> catalogues;
+  // Seeds the public-domain catalogues, once, when the settings file has
+  // never carried a catalogue list. Removing them all is remembered.
+  void apply_catalogue_defaults();
   // Where books fetched from a catalogue are written, under the drive root.
   std::string catalogue_folder = "Downloads";
 

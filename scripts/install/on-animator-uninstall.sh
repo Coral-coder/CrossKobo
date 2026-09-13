@@ -43,6 +43,17 @@ while true ; do
 done
 STOCK
 chmod 755 /etc/init.d/on-animator.sh
+sync
 
-# Draw the animation for this boot, as the stock script would.
-exec /bin/sh /etc/init.d/on-animator.sh
+# Stop here. Do NOT run the restored script.
+#
+# This process was started by rcS in the animation script's place, and the
+# firmware stops the animation with "killall on-animator.sh" - which matches
+# on the process name. A script run as "/bin/sh /etc/init.d/on-animator.sh"
+# is called "sh", so that kill misses it and the boot animation paints over
+# the stock software forever. That is exactly what happened.
+#
+# Exiting now means nothing paints over this boot, and from the next boot rcS
+# starts the restored script itself, under its own name, killable exactly as
+# the firmware expects.
+exit 0

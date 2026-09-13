@@ -50,7 +50,17 @@ class OpdsBrowser : public ListView {
   }
 
   void on_show() override {
-    if (!loaded_) load(url_);
+    if (loaded_) return;
+    if (auth_.search_only()) {
+      // Nothing to browse: this catalogue is a search endpoint, so ask for
+      // the query straight away.
+      loaded_ = true;
+      feed_.search_url = auth_.search;
+      rebuild();
+      activate(kSearch);
+      return;
+    }
+    load(url_);
   }
 
  private:
@@ -75,6 +85,9 @@ class OpdsBrowser : public ListView {
     loaded_ = true;
     url_ = url;
     feed_ = feed;
+    // A search address saved with the catalogue wins over whatever the feed
+    // advertises: it is the one the reader chose.
+    if (!auth_.search.empty()) feed_.search_url = auth_.search;
     if (!feed_.title.empty() && title_.empty()) set_title(feed_.title);
     rebuild();
   }
@@ -179,7 +192,8 @@ class CatalogueList : public ListView {
   CatalogueList() : ListView("Catalogues", {}, nullptr) {
     set_empty_message(
         "No catalogues yet.\n\nTap \"Add\" and enter the OPDS address of your library - "
-        "Shelfmark, Calibre-Web, Kavita, Komga and the public catalogues all work.");
+        "Calibre-Web, Kavita, Komga, your own server, or a public catalogue. An address "
+        "with {searchTerms} in it is added as a search source instead.");
     set_actions({{"Add", kAdd}, {"Find on network", kFind}});
     on_select_ = [this](int id) { activate(id); };
     on_long_press_ = [this](int id) { edit(id); };
@@ -198,7 +212,7 @@ class CatalogueList : public ListView {
       Item item;
       item.id = (int)i + 1;
       item.row.title = list[i].name.empty() ? list[i].url : list[i].name;
-      item.row.subtitle = list[i].url;
+      item.row.subtitle = list[i].search_only() ? "Search: " + list[i].search : list[i].url;
       item.row.trailing = "›";
       items.push_back(item);
     }
@@ -286,13 +300,24 @@ class CatalogueList : public ListView {
           App::instance().pop();
           std::string url = trim(text);
           if (!ok || url.empty() || url == "https://") return;
+          // An address with a search placeholder in it is a search
+          // endpoint - which is how a server with its own search format
+          // gets added exactly as it is.
+          bool is_search = url.find("{searchTerms}") != std::string::npos ||
+                           url.find("{searchterms}") != std::string::npos ||
+                           url.find("{query}") != std::string::npos;
           // Ask for a name second: the address is the part that must be
           // right, and a name can be derived from the feed if skipped.
           App::instance().push(ViewPtr(new KeyboardView(
-              "Name for this catalogue", "", [url](const std::string& name, bool named) {
+              "Name for this catalogue", "",
+              [url, is_search](const std::string& name, bool named) {
                 App::instance().pop();
                 Settings::Catalogue c;
-                c.url = url;
+                if (is_search) {
+                  c.search = url;
+                } else {
+                  c.url = url;
+                }
                 c.name = named ? trim(name) : "";
                 if (c.name.empty()) {
                   Url parsed;

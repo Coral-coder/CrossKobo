@@ -8,7 +8,7 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.6, running on a Kobo Libra Colour.**
+> **Status: version 0.1.7, running on a Kobo Libra Colour.**
 > Two ways in: an **add-on** that leaves the stock Kobo software in charge
 > and only adds OPDS catalogue browsing to its menus, or the full interface
 > that starts in its place. Every release so far has been installed on real
@@ -84,8 +84,10 @@ Two packages, from the
 - **`CrossKobo-catalogues-<version>-install.zip`** - an add-on. It leaves
   the stock Kobo software in charge and adds OPDS catalogue browsing
   (Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Gutenberg) to its
-  menus, through [NickelMenu](https://github.com/pgaskin/NickelMenu).
-  Nothing takes over the boot.
+  menus - as entries in the Kobo library, with nothing else to install, and
+  in the stock menus too where
+  [NickelMenu](https://github.com/pgaskin/NickelMenu) is present. Nothing
+  takes over the boot.
 - **`CrossKobo-<version>-install.zip`** - the full interface, which starts
   instead of the stock Kobo home screen.
 

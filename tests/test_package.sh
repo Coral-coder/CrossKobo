@@ -180,10 +180,37 @@ tar -xzf "${WORK}/addon/.kobo/KoboRoot.tgz" -C "${WORK}/addonroot"
 check $? "add-on carries the binary"
 [ -x "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh" ]
 check $? "add-on carries the menu launcher"
-# The whole point of this package: the stock software stays in charge, so
-# nothing in it may touch the boot.
-[ ! -e "${WORK}/addonroot/etc" ]
-check $? "add-on installs no boot hook"
+[ -x "${WORK}/addonroot/usr/local/crosskobo/crosskobo-watch.init" ]
+check $? "add-on carries the watcher init script"
+[ -x "${WORK}/addonroot/etc/init.d/crosskobo-watch" ]
+check $? "add-on installs the watcher for firmware 5"
+[ -L "${WORK}/addonroot/etc/rcS.d/S99crosskobo-watch" ]
+check $? "add-on starts the watcher from rcS"
+[ -f "${WORK}/addon/CrossKobo Catalogues.txt" ]
+check $? "add-on ships the library entry"
+
+# The whole point of this package: the stock software stays in charge. It may
+# start a watcher and draw the boot animation, and nothing else.
+ADDON_HOOK="${WORK}/addonroot/etc/init.d/on-animator.sh"
+grep -q 'crosskobo-watch.init' "${ADDON_HOOK}"
+check $? "firmware 4 hook starts the watcher"
+grep -q 'showpic' "${ADDON_HOOK}"
+check $? "firmware 4 hook draws the stock animation"
+grep -q 'frames} -lt' "${ADDON_HOOK}"
+check $? "firmware 4 hook caps its animation loop"
+# Same trap as the uninstaller: the firmware kills the animation by process
+# name, so the hook must draw it inline rather than exec a copy through sh.
+if grep -qE '^[^#]*exec[[:space:]]+/bin/sh' "${ADDON_HOOK}"; then
+    check 1 "firmware 4 hook keeps the animation in this process"
+else
+    check 0 "firmware 4 hook keeps the animation in this process"
+fi
+if grep -rqE 'killall[^#]*nickel|crosskobo\.sh' "${WORK}/addonroot/etc" \
+        "${WORK}/addonroot/usr/local/crosskobo/crosskobo-watch.init"; then
+    check 1 "add-on never stops the stock software at boot"
+else
+    check 0 "add-on never stops the stock software at boot"
+fi
 grep -q -- '--return-to-kobo' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
 check $? "menu launcher hands the screen back on exit"
 
@@ -207,6 +234,16 @@ grep -q 'S99crosskobo' "${WORK}/unroot/etc/init.d/on-animator.sh"
 check $? "uninstaller removes the firmware 5 hook"
 grep -q 'pickel showpic' "${WORK}/unroot/etc/init.d/on-animator.sh"
 check $? "uninstaller restores the stock animation"
+# It must not RUN what it restores. The firmware stops the animation with
+# "killall on-animator.sh", which matches on the process name, so a script
+# running as "/bin/sh /etc/init.d/on-animator.sh" is called "sh" and
+# survives the kill - painting the boot screen over the stock software
+# forever. Restoring the file and exiting leaves the next boot to rcS.
+if grep -qE '^[^#]*exec[[:space:]]' "${WORK}/unroot/etc/init.d/on-animator.sh"; then
+    check 1 "uninstaller does not run the animation it restores"
+else
+    check 0 "uninstaller does not run the animation it restores"
+fi
 # The uninstaller may touch exactly one path on the user partition: the
 # NickelMenu entry CrossKobo created, which would otherwise point at a
 # binary that is gone. Anything else under /mnt - and any recursive or

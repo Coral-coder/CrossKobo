@@ -167,6 +167,21 @@ seconds are ignored so opening a book by accident does not pollute them.
 - Search uses the catalogue's own search link. Paged catalogues get a
   **More** button. Servers behind Basic authentication work: put `user` and
   `password` in the catalogue's entry in `.crosskobo/settings.json`.
+- **Your own search format.** An address with `{searchTerms}` in it is
+  added as a search source rather than a feed: CrossKobo fills the
+  placeholder in and reads the answer as OPDS, so a server with its own
+  search endpoint - or several of them - is used exactly as it is. Such a
+  catalogue opens straight into the keyboard.
+- **Ships with the public-domain libraries** already in the list: Standard
+  Ebooks, Project Gutenberg and the Internet Archive. Remove them and they
+  stay removed.
+- **In the stock library, with nothing else installed.** The add-on puts
+  "CrossKobo Catalogues" and "CrossKobo Shelfmark" on the drive as library
+  entries and runs a small watcher that notices the Kobo software opening
+  one of them. Tapping an entry opens the browser; leaving it hands the
+  screen straight back. The bottom bar of the stock home screen belongs to
+  nickel itself and cannot be extended without patching it, which
+  CrossKobo does not do.
 - **Without replacing the interface at all.** There is a separate
   `CrossKobo-catalogues-<version>-install.zip` that installs only the
   catalogue browser and its menu entries: no boot hook, no replacement

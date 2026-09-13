@@ -133,6 +133,44 @@ int main() {
   // Point sizes must scale with panel density.
   CHECK(clamped.font_px(300) > clamped.font_px(212));
 
+  // Catalogues: a saved search endpoint round-trips, and the public-domain
+  // defaults are seeded only when the file has never carried a list.
+  {
+    Settings fresh;
+    fresh.apply_catalogue_defaults();
+    CHECK(fresh.catalogues.size() == 3);
+    CHECK(!fresh.catalogues.empty() && !fresh.catalogues[0].url.empty());
+    // Seeding twice does not duplicate.
+    fresh.apply_catalogue_defaults();
+    CHECK(fresh.catalogues.size() == 3);
+
+    Settings::Catalogue mine;
+    mine.name = "My server";
+    mine.search = "https://books.example.org/search?q={searchTerms}";
+    mine.user = "reader";
+    mine.password = "hunter2";
+    CHECK(mine.search_only());
+    fresh.catalogues.push_back(mine);
+
+    Json json = fresh.to_json();
+    Settings loaded;
+    loaded.from_json(json);
+    CHECK(loaded.catalogues.size() == 4);
+    const Settings::Catalogue& back = loaded.catalogues.back();
+    CHECK(back.name == "My server");
+    CHECK(back.search == mine.search);
+    CHECK(back.user == "reader" && back.password == "hunter2");
+    CHECK(back.search_only());
+
+    // An explicitly empty list stays empty: removing them all is a choice.
+    Settings none;
+    none.catalogues.clear();
+    Json empty_json = none.to_json();
+    Settings reloaded;
+    reloaded.from_json(empty_json);
+    CHECK(reloaded.catalogues.empty());
+  }
+
   // The SNTP decoder: byte arithmetic on a packet from the network, so the
   // interesting cases are the malformed ones.
   {

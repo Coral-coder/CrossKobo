@@ -74,6 +74,7 @@ Json Settings::to_json() const {
       Json entry = Json::object();
       entry["name"] = Json(c.name);
       entry["url"] = Json(c.url);
+      if (!c.search.empty()) entry["search"] = Json(c.search);
       if (!c.user.empty()) entry["user"] = Json(c.user);
       if (!c.password.empty()) entry["password"] = Json(c.password);
       list.push_back(entry);
@@ -155,15 +156,21 @@ void Settings::from_json(const Json& j) {
   clock_sync = j.get_bool("clockSync", clock_sync);
   touch_calibrated = j.get_bool("touchCalibrated", touch_calibrated);
   catalogue_folder = j.get_string("catalogueFolder", catalogue_folder);
+  if (!j.has("catalogues")) {
+    // A settings file from before catalogues existed: seed the defaults so
+    // the browser has something in it.
+    apply_catalogue_defaults();
+  }
   if (const Json* list = j.find("catalogues")) {
     catalogues.clear();
     for (const Json& entry : list->items()) {
       Catalogue c;
       c.name = entry.get_string("name");
       c.url = entry.get_string("url");
+      c.search = entry.get_string("search");
       c.user = entry.get_string("user");
       c.password = entry.get_string("password");
-      if (!c.url.empty()) catalogues.push_back(c);
+      if (!c.url.empty() || !c.search.empty()) catalogues.push_back(c);
     }
   }
   status_bar_battery = j.get_bool("statusBarBattery", status_bar_battery);
@@ -220,6 +227,31 @@ void Settings::from_json(const Json& j) {
   log_debug = j.get_bool("logDebug", log_debug);
 }
 
+void Settings::apply_catalogue_defaults() {
+  // Public-domain libraries, so the catalogue browser is useful before
+  // anyone has typed an address. All of them are free to read and free to
+  // redistribute; anything else is for the reader to add.
+  const struct {
+    const char* name;
+    const char* url;
+  } kDefaults[] = {
+      {"Standard Ebooks", "https://standardebooks.org/feeds/opds"},
+      {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/"},
+      {"Internet Archive", "https://bookserver.archive.org/catalog/"},
+  };
+  for (const auto& entry : kDefaults) {
+    bool known = false;
+    for (const Catalogue& c : catalogues) {
+      if (c.url == entry.url) known = true;
+    }
+    if (known) continue;
+    Catalogue c;
+    c.name = entry.name;
+    c.url = entry.url;
+    catalogues.push_back(c);
+  }
+}
+
 void Settings::apply_touch_defaults() {
   const DeviceInfo& dev = device();
   touch_transform = TouchTransform();
@@ -235,6 +267,7 @@ void Settings::apply_touch_defaults() {
 void Settings::apply_device_defaults() {
   const DeviceInfo& dev = device();
   apply_touch_defaults();
+  apply_catalogue_defaults();
   if (!dev.has_frontlight) frontlight_on = false;
 }
 

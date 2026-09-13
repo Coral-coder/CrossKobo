@@ -19,15 +19,23 @@ Project Gutenberg - to the stock software's menus. Nothing takes over the
 boot, and if you do not like it, nothing has to be undone beyond unzipping
 the uninstaller.
 
-1. Install [NickelMenu](https://github.com/pgaskin/NickelMenu). It is what
-   puts entries into the stock Kobo menus; the stock Discover tab belongs
-   to a closed application and cannot be extended from outside it.
-2. Unpack `CrossKobo-catalogues-<version>-install.zip` to the root of the
-   Kobo's drive and eject. The device installs it and restarts.
-3. Open the menu in the stock software: **CrossKobo**, **Catalogues
-   (OPDS)** and **Shelfmark** are in it. Tapping one borrows the screen and
-   hands it back when you leave - swipe up from the bottom edge, or press a
-   page-turn button.
+1. Unpack `CrossKobo-catalogues-<version>-install.zip` to the root of the
+   Kobo's drive and eject. The device installs it and restarts. That is the
+   whole installation - nothing else is needed.
+2. In your Kobo's library, open **CrossKobo Catalogues**. It looks like a
+   book because that is the one thing the stock software can be asked to do
+   from outside it: the add-on watches for that file being opened and starts
+   the catalogue browser. **CrossKobo Shelfmark** goes straight to the
+   catalogue you have saved under that name.
+3. Leaving the browser - swipe up from the bottom edge, or press a page-turn
+   button - hands the screen straight back to the Kobo software.
+
+If you also have [NickelMenu](https://github.com/pgaskin/NickelMenu)
+installed, the add-on additionally writes `.adds/nm/crosskobo`, which puts
+**CrossKobo**, **Catalogues (OPDS)** and **Shelfmark** in the stock menus.
+That is optional: the library entries work without it. The bottom bar of the
+stock home screen belongs to nickel itself, and putting anything there means
+patching nickel, which this project does not do.
 
 Books download into `Downloads` on the drive, where the stock library finds
 them like anything copied over USB. The menu entries are a plain text file

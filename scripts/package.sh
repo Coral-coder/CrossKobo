@@ -129,6 +129,15 @@ install -m 755 scripts/install/menu-launch.sh \
 install -m 755 scripts/install/start-nickel.sh \
     "${ADDON_PAY}/usr/local/crosskobo/start-nickel.sh"
 install -m 644 scripts/install/nm-crosskobo "${ADDON_PAY}/usr/local/crosskobo/nm-crosskobo"
+install -m 755 scripts/install/crosskobo-watch.init \
+    "${ADDON_PAY}/usr/local/crosskobo/crosskobo-watch.init"
+# The boot hooks: on firmware 4 the animation script is the only thing that
+# runs early, so the hook draws the stock animation inline and starts the
+# watcher alongside it; on firmware 5 the watcher gets its own init script.
+mkdir -p "${ADDON_PAY}/etc/init.d" "${ADDON_PAY}/etc/rcS.d"
+install -m 755 scripts/install/on-animator-watch.sh "${ADDON_PAY}/etc/init.d/on-animator.sh"
+install -m 755 scripts/install/crosskobo-watch.init "${ADDON_PAY}/etc/init.d/crosskobo-watch"
+ln -sf ../init.d/crosskobo-watch "${ADDON_PAY}/etc/rcS.d/S99crosskobo-watch"
 cp -r "${PAYLOAD}/usr/local/crosskobo/fonts/." "${ADDON_PAY}/usr/local/crosskobo/fonts/"
 printf '%s\n' "${VERSION}" > "${ADDON_PAY}/usr/local/crosskobo/VERSION"
 chmod 644 "${ADDON_PAY}/usr/local/crosskobo/VERSION"
@@ -139,6 +148,36 @@ ADDON="${STAGE}/addon"
 mkdir -p "${ADDON}/.kobo" "${ADDON}/.adds/nm"
 cp "${STAGE}/addon-KoboRoot.tgz" "${ADDON}/.kobo/KoboRoot.tgz"
 install -m 644 scripts/install/nm-crosskobo "${ADDON}/.adds/nm/crosskobo"
+# The library entries. The watcher writes these too, but shipping them means
+# they are there the first time the Kobo indexes the drive.
+cat > "${ADDON}/CrossKobo Catalogues.txt" <<TXT
+CrossKobo
+=========
+
+Open this from your Kobo's library and the CrossKobo catalogue browser
+starts: your OPDS libraries, and the public-domain catalogues it ships
+with.
+
+Books you download land in the Downloads folder on this drive, where your
+Kobo finds them like anything copied over USB.
+
+Leave it with a swipe up from the bottom edge, or a page-turn button, and
+the Kobo software comes straight back.
+
+Deleting this file removes the entry; the add-on puts it back on the next
+restart unless you remove the add-on too.
+TXT
+cat > "${ADDON}/CrossKobo Shelfmark.txt" <<TXT
+CrossKobo - Shelfmark
+=====================
+
+Open this from your Kobo's library to go straight to the catalogue saved as
+"Shelfmark". Add it once - in the catalogue list, by address or with "Find
+on network" - and this entry opens it from then on.
+
+Leave it with a swipe up from the bottom edge, or a page-turn button.
+TXT
+chmod 644 "${ADDON}/CrossKobo Catalogues.txt" "${ADDON}/CrossKobo Shelfmark.txt"
 cat > "${ADDON}/READ-ME-FIRST.txt" <<TXT
 CrossKobo catalogues ${VERSION} - an add-on for the stock Kobo software
 =======================================================================
@@ -174,7 +213,7 @@ drive and eject. That takes the add-on and its menu entries away and leaves
 your books and downloads alone.
 TXT
 (cd "${ADDON}" && zip -q -r "${OUT}/CrossKobo-catalogues-${VERSION}-install.zip" \
-    .kobo .adds READ-ME-FIRST.txt)
+    .kobo .adds READ-ME-FIRST.txt "CrossKobo Catalogues.txt" "CrossKobo Shelfmark.txt")
 
 # ---------------------------------------------------------------------------
 # Firmware 4 uninstall package.
