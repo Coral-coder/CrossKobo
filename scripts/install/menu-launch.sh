@@ -26,7 +26,7 @@ fi
 
 # Only one at a time: a second launch while CrossKobo owns the screen would
 # fight it for the framebuffer.
-if pkill -0 -f "${INSTALL_DIR}/crosskobo" 2>/dev/null; then
+if pidof crosskobo >/dev/null 2>&1; then
     log "already running"
     exit 0
 fi
