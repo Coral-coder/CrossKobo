@@ -173,7 +173,7 @@ void Settings::from_json(const Json& j) {
   frontlight_warmth = std::max(0, std::min(100, j.get_int("frontlightWarmth", frontlight_warmth)));
   frontlight_on = j.get_bool("frontlightOn", frontlight_on);
 
-  theme = enum_from(j, "uiTheme", theme, 3);
+  theme = enum_from(j, "uiTheme", theme, 4);
   night_mode = j.get_bool("screenInverted", night_mode);
   cfa_mode = enum_from(j, "cfaMode", cfa_mode, 6);
   saturation_boost = (float)std::max(-1.0, std::min(1.0, j.get_double("saturationBoost",

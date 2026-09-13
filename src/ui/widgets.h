@@ -32,6 +32,12 @@ class HitList {
 
 TextStyle ui_style(int px, Color color, FontStyle style = FontStyle::Regular);
 
+// Paints the page ground for shell screens: flat on the plain themes, a
+// sky wash with a couple of droplets under Aero. Reading surfaces (the
+// reader and the note canvas) stay flat on purpose.
+void paint_background(Canvas& c, const Rect& area);
+void paint_background(Canvas& c);
+
 struct StatusBarInfo {
   std::string left;
   std::string centre;
@@ -47,7 +53,10 @@ struct StatusBarInfo {
 // caller, so the title never overlaps it.
 int draw_top_bar(Canvas& c, const Rect& area, const std::string& title,
                  const StatusBarInfo& info, int left_inset = 0);
-void draw_battery_icon(Canvas& c, const Rect& r, int percent, bool charging);
+// `on_bar` draws it in the top bar's ink, which differs from the body
+// text colour once the bar has a colour of its own.
+void draw_battery_icon(Canvas& c, const Rect& r, int percent, bool charging,
+                       bool on_bar = false);
 
 enum class ButtonStyle { Normal, Primary, Ghost, Danger };
 void draw_button(Canvas& c, const Rect& r, const std::string& label, ButtonStyle style,

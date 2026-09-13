@@ -8,7 +8,7 @@
 
 namespace ck {
 
-enum class UiTheme { Classic, Minimal, Dashboard };
+enum class UiTheme { Classic, Minimal, Dashboard, Aero };
 enum class SleepScreen { Cover, BookProgress, Dashboard, Custom, Blank };
 enum class Alignment { Left, Justify };
 enum class ImageRendering { Grayscale, Color, ColorBoost };

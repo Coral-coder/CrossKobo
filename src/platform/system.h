@@ -13,6 +13,17 @@ bool nickel_running();
 void signal_ready(bool ready);
 // Lets the boot watchdog know the stock UI is meant to run from now on.
 void allow_nickel();
+
+// Stops the firmware's boot animation.
+//
+// The animation script draws a frame every quarter second through the
+// firmware's own framebuffer tool, and it normally runs until Nickel
+// finishes starting and kills it. CrossKobo stops Nickel before that
+// happens, so the animation would otherwise keep repainting over the
+// interface forever - which is exactly what it did on the first devices
+// this ran on. Both firmware generations name the script differently, and
+// the drawing tool has to go too.
+void stop_boot_animation();
 // Siphons PLATFORM/PRODUCT/DBUS_SESSION_BUS_ADDRESS etc. out of a running
 // Nickel so we can hand them back when restarting it later. Must be called
 // before stop_nickel().

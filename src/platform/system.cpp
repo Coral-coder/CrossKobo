@@ -51,6 +51,16 @@ void signal_ready(bool ready) {
   }
 }
 
+void stop_boot_animation() {
+  // Names differ by firmware: on-animator.sh on 4.x, animator.sh on 5.x,
+  // and pickel/pickel-mtk is the tool both use to push frames.
+  run("killall -q -TERM on-animator.sh animator.sh 2>/dev/null");
+  run("killall -q -TERM pickel pickel-mtk 2>/dev/null");
+  // The scripts loop, so a TERM to the shell may land between iterations.
+  sleep_ms(150);
+  run("killall -q -KILL on-animator.sh animator.sh pickel pickel-mtk 2>/dev/null");
+}
+
 void allow_nickel() {
   fs::write_file_atomic("/tmp/crosskobo-allow-nickel", "1\n");
   fs::remove_file("/tmp/crosskobo-ready");

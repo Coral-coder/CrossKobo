@@ -187,7 +187,7 @@ void App::draw_frame() {
   View* view = top();
   if (!view) return;
 
-  if (view->opaque()) canvas.clear(theme().bg);
+  if (view->opaque()) paint_background(canvas);
   canvas.clear_clip();
   view->draw(canvas, screen.bounds());
   draw_toast(canvas);
@@ -209,7 +209,7 @@ void App::draw_sleep_screen() {
   Screen& screen = Screen::instance();
   Canvas& canvas = screen.canvas();
   const Theme& th = theme();
-  canvas.clear(th.bg);
+  paint_background(canvas);
   Rect b = screen.bounds();
 
   const Settings& s = settings();
@@ -416,7 +416,7 @@ bool App::confirm(const std::string& title, const std::string& message,
   while (!done) {
     // Repaint the view underneath so the dialog composites over real content.
     if (View* view = top()) {
-      canvas.clear(th.bg);
+      paint_background(canvas);
       canvas.clear_clip();
       view->draw(canvas, bounds);
     }
@@ -521,6 +521,10 @@ int App::run() {
     return kExitError;
   }
   int64_t last_usb_check = 0;
+  // The firmware's boot animation can be started a moment after we take the
+  // screen, so sweep for it again over the first few seconds.
+  int64_t animation_sweep_until = simulated_ ? 0 : now_ms() + 20000;
+  int64_t last_animation_sweep = 0;
   while (!quit_requested_) {
     // Safe point: nothing is executing inside a view any more.
     release_retired();
@@ -530,6 +534,11 @@ int App::run() {
     int timeout = view ? view->tick_ms() : -1;
     if (timeout < 0) timeout = 1000;
     timeout = std::min(timeout, 1000);
+
+    if (now_ms() < animation_sweep_until && now_ms() - last_animation_sweep > 2000) {
+      last_animation_sweep = now_ms();
+      sys::stop_boot_animation();
+    }
 
     InputEvent event = Input::instance().next(timeout);
     if (event.type == EventType::Timeout) {

@@ -11,6 +11,9 @@ tapping the middle of a page, or swiping up.
   3x3 layout. Books with no cover get a generated one showing the title.
 - **Dashboard theme** replaces the grid with eight statistics tiles
   (*Settings → Display → Interface theme → Dashboard*).
+- **At a glance**: when the shelf leaves room, four glass tiles above the
+  buttons show time read today, the current streak, books finished and how
+  many notebooks you have. Tapping one goes to statistics or notebooks.
 - Bottom navigation: Library, Notebooks, Statistics, Settings.
 - The page-turn buttons open the last book you were reading.
 
@@ -117,8 +120,14 @@ rather than hiding them:
 
 ## Display, light and power
 
-- Three interface themes: Classic (rules and panels), Minimal
-  (typography only), Dashboard (statistics forward).
+- Four interface themes: Classic (rules and panels), Minimal (typography
+  only), Dashboard (statistics forward) and **Aero** — the glossy,
+  sky-blue, water-droplet look of the late 2000s: vertical gradients, a
+  glass wash over the chrome, soft shadows, droplets on the page ground,
+  four-colour navigation buttons, and coverless books given their own hue
+  so a shelf is colourful. Saturated on purpose: the Kaleido colour filter
+  halves effective saturation, so gentle tints wash out to grey on the
+  panel. Night mode has its own deep-water Aero palette.
 - **Night mode** inverts the interface, using the panel's eclipse waveforms
   on MediaTek devices and software inversion elsewhere.
 - Front light brightness and, on devices with natural light, warmth.
@@ -142,7 +151,11 @@ seconds are ignored so opening a book by accident does not pollute them.
 
 - Swap page-turn buttons; buttons follow rotation.
 - Tap zones and centre-tap behaviour.
-- USB behaviour: ask, hand over to the Kobo UI, or ignore.
+- USB behaviour: ask, share the drive, hand over to the Kobo UI, or ignore.
+  The USB prompt answers the hardware page buttons as well as touch -
+  page-forward shares the drive, page-back hands over to the stock
+  software - so a cable and one button are always enough to reach a
+  computer, even if you cannot see or tap what is on screen.
 - **Touch and stylus test**: shows where input lands, with per-axis mirror
   and swap toggles for both the touch panel and the digitiser. This is the
   screen to use if taps or ink land in the wrong place on a model this
@@ -150,10 +163,17 @@ seconds are ignored so opening a book by accident does not pollute them.
 - **About** reports the detected device, panel geometry, display controller,
   whether a stylus and a colour panel were found, and where files live.
 
-## Deliberately not in 0.1.0
+## Added since 0.1.0
 
-Wi-Fi, OPDS, KOReader progress sync, dictionaries, PDF reading, text
-selection and highlights, and USB mass storage handled in-app. The first
-three need a network stack this build does not link; PDF needs a rendering
-engine; USB mass storage is left to the stock software on purpose, because
-that is also what makes the recovery path reliable.
+- **Boot takeover**: CrossKobo owns the boot. The stock software is started
+  only to inherit its environment and is then stopped, the Kobo boot
+  animation is stopped with it, and a watchdog keeps it from coming back.
+- **Wi-Fi**: scan, connect, saved networks, status in the bar.
+- **USB mass storage in-app**: share the drive without leaving CrossKobo.
+- **Aero theme** and the at-a-glance tiles.
+
+## Deliberately not here yet
+
+OPDS catalogues, KOReader progress sync, dictionaries, PDF reading, and
+text selection with highlights. The reader engine handles EPUB, TXT and
+CBZ; PDF needs a rendering engine this build does not carry.

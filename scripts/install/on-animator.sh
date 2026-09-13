@@ -42,8 +42,12 @@ fi
 PICKEL="/usr/local/Kobo/pickel"
 [ -x "/usr/local/Kobo/pickel-mtk" ] && PICKEL="/usr/local/Kobo/pickel-mtk"
 
+# Give up after a couple of minutes whatever happens: an animation that
+# outlives the thing it was waiting for is worse than a blank screen.
 i=0
-while [ ! -f "${READY_FLAG}" ]; do
+frames=0
+while [ ! -f "${READY_FLAG}" ] && [ ${frames} -lt 480 ]; do
+    frames=$((frames + 1))
     i=$(( (i + 1) % 11 ))
     image="/etc/images/${PREFIX}on-${i}.raw.gz"
     if [ -s "${image}" ]; then

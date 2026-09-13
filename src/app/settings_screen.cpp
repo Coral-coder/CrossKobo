@@ -151,7 +151,7 @@ void push_display_settings() {
     Settings& s = settings();
     Power& power = Power::instance();
     std::vector<ListView::Item> items;
-    const char* themes[] = {"Classic", "Minimal", "Dashboard"};
+    const char* themes[] = {"Classic", "Minimal", "Dashboard", "Aero"};
     items.push_back(row(kTheme, "Interface theme", themes[(int)s.theme]));
     items.push_back(row(kNight, "Night mode", on_off(s.night_mode)));
     if (Screen::instance().color()) {
@@ -184,7 +184,7 @@ void push_display_settings() {
     int delta = right_half(list) ? 1 : -1;
     switch (id) {
       case kTheme:
-        s.theme = (UiTheme)(((int)s.theme + 1) % 3);
+        s.theme = (UiTheme)(((int)s.theme + 1) % 4);
         refresh_theme_from_settings(Screen::instance().dpi());
         App::instance().invalidate(Refresh::Flash);
         break;
@@ -586,7 +586,7 @@ class CalibrationScreen : public View {
   void draw(Canvas& canvas, const Rect& bounds) override {
     const Theme& th = theme();
     hits_.clear();
-    canvas.clear(th.bg);
+    paint_background(canvas);
     StatusBarInfo info;
     int top = draw_top_bar(canvas, bounds, "Touch and stylus test", info);
 

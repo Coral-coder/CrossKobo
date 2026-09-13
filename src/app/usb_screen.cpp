@@ -50,7 +50,7 @@ class UsbActiveScreen : public View {
   void draw(Canvas& canvas, const Rect& bounds) override {
     const Theme& th = theme();
     hits_.clear();
-    canvas.clear(th.bg);
+    paint_background(canvas);
 
     StatusBarInfo info;
     BatteryState battery = Power::instance().battery();
@@ -78,7 +78,7 @@ class UsbActiveScreen : public View {
              bounds.w - 4 * th.padding, th.row_height * 4),
         "Books, notebooks and everything else on the drive are available on "
         "your computer.\n\nEject the drive there, then unplug the cable - or tap "
-        "Stop below.");
+        "Stop below, or press a page button.");
 
     Rect stop((bounds.w - bounds.w / 2) / 2, bounds.bottom() - th.row_height * 2,
               bounds.w / 2, th.row_height);
@@ -93,6 +93,12 @@ class UsbActiveScreen : public View {
     }
     // The power button would otherwise put the device to sleep mid-copy.
     if (event.type == EventType::KeyDown && event.key == Key::Power) return true;
+    // A page button stops sharing, so the cable is never the only way out.
+    if (event.type == EventType::KeyDown &&
+        (event.key == Key::PageForward || event.key == Key::PageBack)) {
+      finish("");
+      return true;
+    }
     return false;
   }
 
@@ -140,7 +146,7 @@ class UsbPromptScreen : public View {
   void draw(Canvas& canvas, const Rect& bounds) override {
     const Theme& th = theme();
     hits_.clear();
-    canvas.clear(th.bg);
+    paint_background(canvas);
     StatusBarInfo info;
     BatteryState battery = Power::instance().battery();
     info.battery_percent = battery.percent;
@@ -161,9 +167,11 @@ class UsbPromptScreen : public View {
     UsbMs& usb = UsbMs::instance();
     std::string blocker = usb.blocker();
     const Choice choices[] = {
-        {"Share the drive", "Your computer sees the books and notebooks. CrossKobo waits.", 1,
+        {"Share the drive",
+         "Your computer sees the books and notebooks. CrossKobo waits. Page-forward button.", 1,
          ButtonStyle::Primary},
-        {"Switch to the Kobo UI", "The stock software takes over until the next restart.", 2,
+        {"Switch to the Kobo UI",
+         "The stock software takes over until the next restart. Page-back button.", 2,
          ButtonStyle::Normal},
         {"Just charge", "Carry on reading.", 3, ButtonStyle::Normal},
     };
@@ -186,8 +194,22 @@ class UsbPromptScreen : public View {
   }
 
   bool handle(const InputEvent& event) override {
+    // The page buttons work too: if the touch panel ever misbehaves, or
+    // something else is repainting over the screen, the cable plus a
+    // hardware button is still enough to reach a computer.
+    if (event.type == EventType::KeyDown) {
+      if (event.key == Key::PageForward) {
+        return choose(UsbMs::instance().blocker().empty() ? 1 : 2);
+      }
+      if (event.key == Key::PageBack) return choose(2);
+      return false;
+    }
     if (event.type != EventType::Tap) return false;
-    switch (hits_.hit(event.x, event.y)) {
+    return choose(hits_.hit(event.x, event.y));
+  }
+
+  bool choose(int id) {
+    switch (id) {
       case 1: {
         UsbMs& usb = UsbMs::instance();
         // Settings must reach the disk before the partition goes away.

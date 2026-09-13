@@ -139,8 +139,14 @@ int main(int argc, char** argv) {
     return kExitError;
   }
 
-  // Tell the boot hook it can stop drawing the start-up animation.
-  if (!simulate) sys::signal_ready(true);
+  // The screen is ours now. Tell the boot hook to stop animating, and stop
+  // the firmware's animation processes directly: the hook honours the flag,
+  // but on firmware 5 the animation is started by the system's own scripts
+  // and nothing else will ever kill it once Nickel is gone.
+  if (!simulate) {
+    sys::signal_ready(true);
+    sys::stop_boot_animation();
+  }
 
   Stats::instance().load();
   Recents::instance().load();
