@@ -15,6 +15,7 @@
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
+#include "core/paths.h"
 #include "core/str.h"
 
 namespace ck {
@@ -121,16 +122,65 @@ class Socket {
   int fd_ = -1;
 };
 
-std::string find_tls_tool() {
-  // The firmware ships one or the other on most builds; KoboStuff adds
-  // more. Whichever is present gets used for https.
-  static const char* kCandidates[] = {"/usr/bin/curl", "/bin/curl", "/usr/local/bin/curl",
-                                      "/usr/bin/wget", "/bin/wget"};
+// The certificates the bundled fetcher verifies against, plus anywhere a
+// reader can add their own - a home server with its own CA, say.
+std::string ca_bundle() {
+  static const char* kCandidates[] = {"/usr/local/crosskobo/cacert.pem",
+                                      "/etc/ssl/certs/ca-certificates.crt"};
   for (const char* path : kCandidates) {
     if (fs::exists(path)) return path;
   }
-  std::string which = trim(ck::format("%s", ""));
-  (void)which;
+  return "";
+}
+
+std::string extra_ca_bundle() {
+  std::string path = paths().data + "/extra-ca.pem";
+  return fs::exists(path) ? path : "";
+}
+
+// What to hand the fetcher: the bundled certificates, or - when a reader has
+// added their own - the two concatenated. Passing a second --cacert would
+// replace the first rather than add to it, which would quietly drop every
+// public CA the moment someone trusted their own server.
+std::string effective_ca_bundle() {
+  std::string bundle = ca_bundle();
+  std::string extra = extra_ca_bundle();
+  if (extra.empty()) return bundle;
+  if (bundle.empty()) return extra;
+
+  static std::string combined_path;
+  static int64_t built_at = 0;
+  int64_t newest = std::max(fs::mtime(bundle), fs::mtime(extra));
+  if (!combined_path.empty() && built_at >= newest && fs::exists(combined_path)) {
+    return combined_path;
+  }
+  std::string bundle_text;
+  std::string extra_text;
+  if (!fs::read_file(bundle, bundle_text) || !fs::read_file(extra, extra_text)) {
+    return bundle;
+  }
+  std::string path = "/tmp/crosskobo-ca.pem";
+  if (!fs::write_file_atomic(path, bundle_text + "\n" + extra_text)) return bundle;
+  combined_path = path;
+  built_at = newest;
+  CK_LOGI("http: trusting %s alongside the bundled certificates", extra.c_str());
+  return combined_path;
+}
+
+std::string find_tls_tool() {
+  // CrossKobo's own fetcher first. It is a static curl with its own TLS and
+  // its own DNS resolver, so https behaves the same on every device instead
+  // of depending on what the firmware happens to ship - which is nothing at
+  // all on some of them.
+  static const char* kCandidates[] = {"/usr/local/crosskobo/bin/curl",
+                                      "/usr/bin/curl",
+                                      "/bin/curl",
+                                      "/usr/local/bin/curl",
+                                      "/usr/bin/wget",
+                                      "/bin/wget"};
+  for (const char* path : kCandidates) {
+    if (fs::exists(path)) return path;
+  }
   return "";
 }
 
@@ -141,9 +191,17 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
   std::string tool = find_tls_tool();
   if (tool.empty()) {
     response.error =
-        "This device has no TLS client, so https addresses cannot be fetched. "
-        "Use an http address, or install curl.";
+        "No TLS client on this device, so https addresses cannot be fetched. "
+        "Reinstall CrossKobo to get its own fetcher back, or use an http address.";
     return response;
+  }
+  // Worth one line in the log: which fetcher answered for https is the
+  // first thing to know when a catalogue will not load.
+  static std::string announced;
+  if (announced != tool) {
+    announced = tool;
+    CK_LOGI("http: https goes through %s%s", tool.c_str(),
+            tool.find("/crosskobo/") != std::string::npos ? " (bundled)" : "");
   }
   std::string target = request.download_path.empty()
                            ? "/tmp/crosskobo-https.tmp"
@@ -155,6 +213,11 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
   if (is_curl) {
     cmd = format("%s -sSL --max-time %d -o '%s' -w '%%{http_code}'", tool.c_str(),
                  std::max(1, request.timeout_ms / 1000), target.c_str());
+    // Certificates: the bundled set, plus a reader's own CA when they have
+    // put one on the drive. Verification stays on either way - a catalogue
+    // that needs it off is a catalogue worth knowing about.
+    std::string bundle = effective_ca_bundle();
+    if (!bundle.empty()) cmd += format(" --cacert '%s'", bundle.c_str());
     for (const auto& kv : request.headers) {
       cmd += format(" -H '%s: %s'", kv.first.c_str(), kv.second.c_str());
     }

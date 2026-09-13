@@ -37,8 +37,19 @@ esac
 STAGE="$(mktemp -d)"
 OUT="${ROOT}/release"
 trap 'rm -rf "${STAGE}"' EXIT
+# A fetcher built earlier (scripts/build-fetcher.sh) survives the clean, so
+# packaging can be re-run without rebuilding curl.
+if [ -x "${OUT}/bin/curl" ]; then
+    FETCHER_KEEP="$(mktemp -d)"
+    cp "${OUT}/bin/curl" "${FETCHER_KEEP}/curl"
+fi
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
+if [ -n "${FETCHER_KEEP:-}" ] && [ -x "${FETCHER_KEEP}/curl" ]; then
+    mkdir -p "${OUT}/bin"
+    cp "${FETCHER_KEEP}/curl" "${OUT}/bin/curl"
+    rm -rf "${FETCHER_KEEP}"
+fi
 
 # ---------------------------------------------------------------------------
 # The payload: everything that lands on the device's root filesystem.
@@ -66,6 +77,17 @@ for f in assets/fonts/*.ttf; do
     install -m 644 "${f}" "${PAYLOAD}/usr/local/crosskobo/fonts/"
 done
 install -m 644 assets/fonts/LICENSE-*.txt "${PAYLOAD}/usr/local/crosskobo/fonts/"
+# Certificates for the fetcher, and the fetcher itself when CI has built
+# one. Without a bundled fetcher CrossKobo falls back to whatever the
+# firmware has; with it, https works the same on every device.
+install -m 644 third_party/cacert.pem "${PAYLOAD}/usr/local/crosskobo/cacert.pem"
+if [ -x "${OUT}/bin/curl" ]; then
+    mkdir -p "${PAYLOAD}/usr/local/crosskobo/bin"
+    install -m 755 "${OUT}/bin/curl" "${PAYLOAD}/usr/local/crosskobo/bin/curl"
+    echo "bundling the fetcher: $(ls -la "${OUT}/bin/curl" | awk '{print $5}') bytes"
+else
+    echo "no fetcher built (scripts/build-fetcher.sh); packaging without one"
+fi
 printf '%s\n' "${VERSION}" > "${PAYLOAD}/usr/local/crosskobo/VERSION"
 chmod 644 "${PAYLOAD}/usr/local/crosskobo/VERSION"
 
@@ -139,6 +161,11 @@ install -m 755 scripts/install/on-animator-watch.sh "${ADDON_PAY}/etc/init.d/on-
 install -m 755 scripts/install/crosskobo-watch.init "${ADDON_PAY}/etc/init.d/crosskobo-watch"
 ln -sf ../init.d/crosskobo-watch "${ADDON_PAY}/etc/rcS.d/S99crosskobo-watch"
 cp -r "${PAYLOAD}/usr/local/crosskobo/fonts/." "${ADDON_PAY}/usr/local/crosskobo/fonts/"
+install -m 644 third_party/cacert.pem "${ADDON_PAY}/usr/local/crosskobo/cacert.pem"
+if [ -x "${OUT}/bin/curl" ]; then
+    mkdir -p "${ADDON_PAY}/usr/local/crosskobo/bin"
+    install -m 755 "${OUT}/bin/curl" "${ADDON_PAY}/usr/local/crosskobo/bin/curl"
+fi
 printf '%s\n' "${VERSION}" > "${ADDON_PAY}/usr/local/crosskobo/VERSION"
 chmod 644 "${ADDON_PAY}/usr/local/crosskobo/VERSION"
 tar --owner=root --group=root --numeric-owner -czf "${STAGE}/addon-KoboRoot.tgz" \

@@ -264,9 +264,33 @@ out from the kernel's own axis ranges, which gets most panels right, and
   something new it says so in a toast, and nothing else happens until you
   ask. Turn it off with `"autoUpdateCheck": false` in
   `.crosskobo/settings.json`.
-- The download needs `curl` or `wget` on the device, since no TLS is linked
-  into CrossKobo. Where neither exists, the update screen says so and the
-  manual route from a computer still works.
+- Downloads go through CrossKobo's own bundled fetcher, so they work the
+  same on every device (see below).
+
+## The bundled fetcher
+
+CrossKobo replaces the software that would otherwise do its downloading, and
+not every firmware ships `curl` or `wget` - so https worked on one Kobo and
+not the next. It now carries its own:
+
+- A static armhf **curl** with **Mbed-TLS** for the TLS and **c-ares** for
+  the DNS, installed at `/usr/local/crosskobo/bin/curl` and preferred over
+  anything the firmware has. c-ares matters as much as the TLS: a statically
+  linked glibc cannot load the NSS modules that normally resolve names, so
+  without it an address - as opposed to an IP - would fail, which is exactly
+  what a catalogue away from home is.
+- **Mozilla's certificate set** at `/usr/local/crosskobo/cacert.pem`,
+  verified against on every request. Certificate verification is never
+  turned off.
+- A **private CA** of your own is supported: put it in
+  `.crosskobo/extra-ca.pem` on the drive and it is trusted *alongside* the
+  bundled set, not instead of it.
+- It is built and then **proven in CI on ARM** before a release ships: a
+  real request to a real server, a verified certificate, and a refusal of a
+  certificate it cannot verify. The build is what fails if the fetcher
+  cannot do those, rather than the reader's catalogue.
+- The log records which fetcher answered, bundled or otherwise, because that
+  is the first thing worth knowing when a catalogue will not load.
 
 ## Controls and diagnostics
 

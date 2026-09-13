@@ -8,7 +8,7 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.10, running on a Kobo Libra Colour.**
+> **Status: version 0.1.11, running on a Kobo Libra Colour.**
 > Two ways in: an **add-on** that leaves the stock Kobo software in charge
 > and only adds OPDS catalogue browsing to its menus, or the full interface
 > that starts in its place. Every release so far has been installed on real

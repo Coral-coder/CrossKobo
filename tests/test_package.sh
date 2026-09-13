@@ -34,6 +34,33 @@ for f in usr/local/crosskobo/crosskobo usr/local/crosskobo/crosskobo.sh \
     [ -f "${WORK}/rootfs/${f}" ]
     check $? "${f} present"
 done
+[ -f "${WORK}/rootfs/usr/local/crosskobo/cacert.pem" ]
+check $? "certificates bundled for https"
+grep -q 'BEGIN CERTIFICATE' "${WORK}/rootfs/usr/local/crosskobo/cacert.pem"
+check $? "the certificate bundle has certificates in it"
+# The fetcher is built by scripts/build-fetcher.sh, which needs the network,
+# so it is present in CI and absent in a plain local build. When it is
+# there it has to be the real thing: a static ARM binary that runs.
+if [ -f "${WORK}/rootfs/usr/local/crosskobo/bin/curl" ]; then
+    case "$(file -b "${WORK}/rootfs/usr/local/crosskobo/bin/curl")" in
+        *ARM*statically*linked*) check 0 "bundled fetcher is a static ARM binary" ;;
+        *) check 1 "bundled fetcher is a static ARM binary" ;;
+    esac
+    if command -v qemu-arm-static >/dev/null 2>&1; then
+        qemu-arm-static "${WORK}/rootfs/usr/local/crosskobo/bin/curl" --version \
+            >/dev/null 2>&1
+        check $? "bundled fetcher runs"
+        qemu-arm-static "${WORK}/rootfs/usr/local/crosskobo/bin/curl" --version 2>/dev/null |
+            grep -qi 'mbedtls'
+        check $? "bundled fetcher has TLS"
+        qemu-arm-static "${WORK}/rootfs/usr/local/crosskobo/bin/curl" --version 2>/dev/null |
+            grep -qi 'asynchdns'
+        check $? "bundled fetcher resolves names without NSS"
+    fi
+else
+    echo "  --   no bundled fetcher in this build (built by CI)"
+fi
+
 [ -x "${WORK}/rootfs/usr/local/crosskobo/crosskobo" ]
 check $? "binary is executable"
 [ -x "${WORK}/rootfs/etc/init.d/on-animator.sh" ]

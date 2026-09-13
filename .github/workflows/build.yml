@@ -88,7 +88,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build g++-arm-linux-gnueabihf qemu-user-static zip unzip shellcheck
+            cmake ninja-build g++-arm-linux-gnueabihf qemu-user-static zip unzip shellcheck \
+            autoconf automake libtool make file
 
       - name: Check the installer scripts
         run: |
@@ -117,6 +118,26 @@ jobs:
         run: |
           qemu-arm-static ./build-arm/crosskobo --version
           qemu-arm-static ./build-arm/crosskobo-sim --root out/arm-root --out out/arm
+
+      # The fetcher CrossKobo ships for https: a static armhf curl with its
+      # own TLS and its own DNS. Cached, because building it takes longer
+      # than everything else here put together.
+      - name: Cache the fetcher
+        id: fetcher-cache
+        uses: actions/cache@v4
+        with:
+          path: release/bin/curl
+          key: fetcher-${{ runner.os }}-${{ hashFiles('scripts/build-fetcher.sh') }}
+
+      - name: Build the fetcher
+        if: steps.fetcher-cache.outputs.cache-hit != 'true'
+        run: scripts/build-fetcher.sh
+
+      # Proven on ARM, against a real server, verifying a real certificate -
+      # and refusing one it cannot verify. A fetcher that builds but cannot
+      # resolve a name would look installed and break every catalogue.
+      - name: Check the fetcher
+        run: scripts/check-fetcher.sh release/bin/curl third_party/cacert.pem
 
       - name: Package
         run: scripts/package.sh
