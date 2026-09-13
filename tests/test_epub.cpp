@@ -8,6 +8,7 @@
 #include "app/settings.h"
 #include "core/fs.h"
 #include "core/log.h"
+#include "net/opds.h"
 #include "epub/book.h"
 #include "core/str.h"
 #include "epub/layout.h"
@@ -299,6 +300,59 @@ int main(int argc, char** argv) {
     }
   }
   CHECK(colourful);
+
+
+  // OPDS catalogues: the Atom dialect every self-hosted library speaks.
+  // Real feeds mix namespace prefixes, relative links and several
+  // acquisition formats per entry, so parse a sample shaped like one.
+  {
+    const char* kFeed =
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\" "
+        "xmlns:opds=\"http://opds-spec.org/2010/catalog\">\n"
+        "  <title>Shelfmark</title>\n"
+        "  <link rel=\"search\" type=\"application/atom+xml\" "
+        "href=\"/opds/search?q={searchTerms}\"/>\n"
+        "  <link rel=\"next\" href=\"/opds/all?page=2\"/>\n"
+        "  <entry>\n"
+        "    <title>Fiction</title>\n"
+        "    <link type=\"application/atom+xml;profile=opds-catalog\" href=\"fiction\"/>\n"
+        "  </entry>\n"
+        "  <entry>\n"
+        "    <title>The Colour of Ink</title>\n"
+        "    <author><name>A. Tester</name></author>\n"
+        "    <summary>A book about pigment.</summary>\n"
+        "    <link rel=\"http://opds-spec.org/image/thumbnail\" href=\"/covers/7.jpg\"/>\n"
+        "    <link rel=\"http://opds-spec.org/acquisition\" type=\"application/pdf\" "
+        "href=\"/get/7.pdf\"/>\n"
+        "    <link rel=\"http://opds-spec.org/acquisition\" "
+        "type=\"application/epub+zip\" length=\"4096\" href=\"/get/7.epub\"/>\n"
+        "  </entry>\n"
+        "</feed>\n";
+    OpdsFeed feed;
+    CHECK(parse_opds(kFeed, "https://books.example.org:8443/opds/root", feed));
+    CHECK(feed.title == "Shelfmark");
+    CHECK(feed.entries.size() == 2);
+    CHECK(feed.next_url == "https://books.example.org:8443/opds/all?page=2");
+    if (feed.entries.size() == 2) {
+      // Navigation entry: a relative href resolves against the feed's directory.
+      CHECK(feed.entries[0].is_navigation());
+      CHECK(feed.entries[0].feed_url == "https://books.example.org:8443/opds/fiction");
+      // Acquisition entry: EPUB wins over the PDF listed before it.
+      const OpdsEntry& book = feed.entries[1];
+      CHECK(!book.is_navigation());
+      CHECK(book.author == "A. Tester");
+      CHECK(book.summary == "A book about pigment.");
+      CHECK(book.download_url == "https://books.example.org:8443/get/7.epub");
+      CHECK(book.size == 4096);
+      CHECK(book.cover_url == "https://books.example.org:8443/covers/7.jpg");
+      CHECK(book.filename() == "A. Tester - The Colour of Ink.epub");
+    }
+    std::string search = opds_search_url(feed.search_url, "colour ink");
+    CHECK(search == "https://books.example.org:8443/opds/search?q=colour%20ink");
+    // A catalogue that advertises a bare endpoint still gets a query.
+    CHECK(opds_search_url("https://x/opds/find", "abc") == "https://x/opds/find?q=abc");
+  }
 
   printf("%s\n", failures ? "FAILED" : "ok");
   return failures ? 1 : 0;
