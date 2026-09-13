@@ -125,7 +125,12 @@ class Socket {
 // The certificates the bundled fetcher verifies against, plus anywhere a
 // reader can add their own - a home server with its own CA, say.
 std::string ca_bundle() {
-  static const char* kCandidates[] = {"/usr/local/crosskobo/cacert.pem",
+  // The one installed alongside this program first, whichever program it
+  // is; then any other install of ours; then the firmware's own.
+  std::string own = paths().install + "/cacert.pem";
+  if (fs::exists(own)) return own;
+  static const char* kCandidates[] = {"/usr/local/catalogues/cacert.pem",
+                                      "/usr/local/crosskobo/cacert.pem",
                                       "/etc/ssl/certs/ca-certificates.crt"};
   for (const char* path : kCandidates) {
     if (fs::exists(path)) return path;
@@ -172,7 +177,10 @@ std::string find_tls_tool() {
   // its own DNS resolver, so https behaves the same on every device instead
   // of depending on what the firmware happens to ship - which is nothing at
   // all on some of them.
-  static const char* kCandidates[] = {"/usr/local/crosskobo/bin/curl",
+  std::string own = paths().install + "/bin/curl";
+  if (fs::exists(own)) return own;
+  static const char* kCandidates[] = {"/usr/local/catalogues/bin/curl",
+                                      "/usr/local/crosskobo/bin/curl",
                                       "/usr/bin/curl",
                                       "/bin/curl",
                                       "/usr/local/bin/curl",
@@ -201,7 +209,10 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
   if (announced != tool) {
     announced = tool;
     CK_LOGI("http: https goes through %s%s", tool.c_str(),
-            tool.find("/crosskobo/") != std::string::npos ? " (bundled)" : "");
+            tool.find("/crosskobo/") != std::string::npos ||
+                    tool.find("/catalogues/") != std::string::npos
+                ? " (bundled)"
+                : "");
   }
   std::string target = request.download_path.empty()
                            ? "/tmp/crosskobo-https.tmp"

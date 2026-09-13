@@ -1,0 +1,8 @@
+# Catalogues uninstaller.
+#
+# This file replaces the Catalogues menu entries with one that removes it.
+# Tap it once; it takes away the program and this file, and nothing else.
+
+menu_item :main :Remove Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/uninstall.sh
+  chain_success :dbg_msg :Catalogues has been removed. NickelMenu is still here; to remove it too, put an empty file named uninstall in the .adds/nm folder on the drive and restart.
+  chain_failure :dbg_msg :Catalogues could not be removed. Delete /usr/local/catalogues by hand over telnet, or the .adds/nm/catalogues file on the drive.

@@ -8,10 +8,14 @@ an EPUB reader with proper typography controls, handwritten notebooks with
 the Kobo Stylus 2, reading statistics, and colour that is actually used
 rather than flattened to grey.
 
-> **Status: version 0.1.11, running on a Kobo Libra Colour.**
-> Two ways in: an **add-on** that leaves the stock Kobo software in charge
-> and only adds OPDS catalogue browsing to its menus, or the full interface
-> that starts in its place. Every release so far has been installed on real
+> **Status: version 0.2.0, running on a Kobo Libra Colour.**
+> Two things here. **Catalogues** is its own small package: book catalogues
+> (Shelfmark, Calibre-Web, Kavita, Komga, Gutenberg, a search-format server
+> of your own) in the Kobo's own browser, from an entry in the stock menu -
+> nothing runs at boot, and nothing of the CrossKobo interface is in it. See
+> [docs/CATALOGUES.md](docs/CATALOGUES.md). The **full interface**, which
+> starts in place of the stock software, is set aside for now: its touch
+> handling has not held up on the device. Every release so far has been installed on real
 > hardware and fixed what that turned up: the boot animation that repainted
 > over the interface, a combined touch-and-stylus panel that broke taps, a
 > transposed touch axis, sleep that woke straight back up, a blinking boot
@@ -81,15 +85,15 @@ Full list: [docs/FEATURES.md](docs/FEATURES.md).
 Two packages, from the
 [latest release](https://github.com/Coral-coder/CrossKobo/releases/latest):
 
-- **`CrossKobo-catalogues-<version>-install.zip`** - an add-on. It leaves
-  the stock Kobo software in charge and adds OPDS catalogue browsing
-  (Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Gutenberg) to its
-  menus - as entries in the Kobo library, with nothing else to install, and
-  in the stock menus too where
-  [NickelMenu](https://github.com/pgaskin/NickelMenu) is present. Nothing
-  takes over the boot.
+- **`Catalogues-<version>-install.zip`** - book catalogues in the Kobo's
+  own browser: Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Gutenberg,
+  and a search-format server of your own, listed in a text file on the
+  drive. The stock software stays exactly as it is;
+  [NickelMenu](https://github.com/pgaskin/NickelMenu) is bundled and puts
+  the entries in its menu. Nothing runs at boot. Firmware 4.x. Its own
+  page: [docs/CATALOGUES.md](docs/CATALOGUES.md).
 - **`CrossKobo-<version>-install.zip`** - the full interface, which starts
-  instead of the stock Kobo home screen.
+  instead of the stock Kobo home screen. Set aside for now.
 
 Either one: unpack it to the root of the Kobo's USB drive and eject. The
 device installs and restarts by itself. (Firmware 5.x devices want the

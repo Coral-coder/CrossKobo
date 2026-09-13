@@ -3,14 +3,17 @@
 # Builds the installable packages for a Kobo.
 #
 # Outputs, in release/:
-#   KoboRoot.tgz                       the payload, for manual copying
+#   Catalogues-<ver>-install.zip       catalogues in the Kobo's own browser
+#   Catalogues-<ver>-uninstall.zip
+#   KoboRoot.tgz                       the CrossKobo payload, for manual copying
 #   CrossKobo-<ver>-install.zip        unzip to the root of the Kobo drive
 #   CrossKobo-<ver>-uninstall.zip      unzip to the root of the Kobo drive
 #   CrossKobo-<ver>-fw5-install.zip    same, for firmware 5.x devices
 #   CrossKobo-<ver>-fw5-uninstall.zip
 #
 # Usage: scripts/package.sh [path-to-arm-binary]
-#        (default: build-arm/crosskobo)
+#        (default: build-arm/crosskobo; the catalogues binary is expected
+#        next to it)
 
 set -e
 
@@ -37,19 +40,11 @@ esac
 STAGE="$(mktemp -d)"
 OUT="${ROOT}/release"
 trap 'rm -rf "${STAGE}"' EXIT
-# A fetcher built earlier (scripts/build-fetcher.sh) survives the clean, so
-# packaging can be re-run without rebuilding curl.
-if [ -x "${OUT}/bin/curl" ]; then
-    FETCHER_KEEP="$(mktemp -d)"
-    cp "${OUT}/bin/curl" "${FETCHER_KEEP}/curl"
-fi
-rm -rf "${OUT}"
+# Only the packages are rebuilt. A fetcher built earlier (scripts/build-fetcher.sh)
+# and a NickelMenu release fetched earlier (scripts/fetch-nickelmenu.sh) stay
+# where they are, so packaging can be re-run without the network.
 mkdir -p "${OUT}"
-if [ -n "${FETCHER_KEEP:-}" ] && [ -x "${FETCHER_KEEP}/curl" ]; then
-    mkdir -p "${OUT}/bin"
-    cp "${FETCHER_KEEP}/curl" "${OUT}/bin/curl"
-    rm -rf "${FETCHER_KEEP}"
-fi
+rm -f "${OUT}"/*.zip "${OUT}"/KoboRoot.tgz
 
 # ---------------------------------------------------------------------------
 # The payload: everything that lands on the device's root filesystem.
@@ -134,113 +129,139 @@ TXT
 (cd "${PKG}" && zip -q -r "${OUT}/CrossKobo-${VERSION}-install.zip" .kobo READ-ME-FIRST.txt)
 
 # ---------------------------------------------------------------------------
-# Catalogues add-on: the stock Kobo software stays in charge.
+# Catalogues: its own program, in its own package, with nothing of the
+# CrossKobo interface in it.
 #
-# Everything CrossKobo needs to browse OPDS catalogues, and nothing that
-# takes over the boot - no /etc/init.d hook, no rcS symlink. The entries
-# appear in the stock menus through NickelMenu, whose configuration lives
-# on the user partition, so it ships in the zip itself rather than in the
-# KoboRoot payload.
+# A web server on the loopback address, serving book catalogues to the
+# Kobo's own browser - so the touch, the keyboard and the scrolling are the
+# stock software's, and the only thing added is the books. Nothing runs at
+# boot: the server starts from the menu entry and stops when idle. NickelMenu
+# rides along in the payload, so the menu entries are there without anything
+# else to install.
 # ---------------------------------------------------------------------------
-ADDON_PAY="${STAGE}/addon-payload"
-mkdir -p "${ADDON_PAY}/usr/local/crosskobo/fonts"
-install -m 755 "${PAYLOAD}/usr/local/crosskobo/crosskobo" \
-    "${ADDON_PAY}/usr/local/crosskobo/crosskobo"
-install -m 755 scripts/install/menu-launch.sh \
-    "${ADDON_PAY}/usr/local/crosskobo/menu-launch.sh"
-install -m 755 scripts/install/start-nickel.sh \
-    "${ADDON_PAY}/usr/local/crosskobo/start-nickel.sh"
-install -m 644 scripts/install/nm-crosskobo "${ADDON_PAY}/usr/local/crosskobo/nm-crosskobo"
-install -m 755 scripts/install/crosskobo-watch.init \
-    "${ADDON_PAY}/usr/local/crosskobo/crosskobo-watch.init"
-# The boot hooks: on firmware 4 the animation script is the only thing that
-# runs early, so the hook draws the stock animation inline and starts the
-# watcher alongside it; on firmware 5 the watcher gets its own init script.
-mkdir -p "${ADDON_PAY}/etc/init.d" "${ADDON_PAY}/etc/rcS.d"
-install -m 755 scripts/install/on-animator-watch.sh "${ADDON_PAY}/etc/init.d/on-animator.sh"
-install -m 755 scripts/install/crosskobo-watch.init "${ADDON_PAY}/etc/init.d/crosskobo-watch"
-ln -sf ../init.d/crosskobo-watch "${ADDON_PAY}/etc/rcS.d/S99crosskobo-watch"
-cp -r "${PAYLOAD}/usr/local/crosskobo/fonts/." "${ADDON_PAY}/usr/local/crosskobo/fonts/"
-install -m 644 third_party/cacert.pem "${ADDON_PAY}/usr/local/crosskobo/cacert.pem"
-if [ -x "${OUT}/bin/curl" ]; then
-    mkdir -p "${ADDON_PAY}/usr/local/crosskobo/bin"
-    install -m 755 "${OUT}/bin/curl" "${ADDON_PAY}/usr/local/crosskobo/bin/curl"
+CAT_BIN="$(dirname "${BIN}")/catalogues"
+if [ ! -f "${CAT_BIN}" ]; then
+    echo "package: no catalogues binary at ${CAT_BIN}" >&2
+    exit 1
 fi
-printf '%s\n' "${VERSION}" > "${ADDON_PAY}/usr/local/crosskobo/VERSION"
-chmod 644 "${ADDON_PAY}/usr/local/crosskobo/VERSION"
-tar --owner=root --group=root --numeric-owner -czf "${STAGE}/addon-KoboRoot.tgz" \
-    -C "${ADDON_PAY}" .
+CAT_PAY="${STAGE}/catalogues-payload"
+mkdir -p "${CAT_PAY}/usr/local/catalogues"
+install -m 755 "${CAT_BIN}" "${CAT_PAY}/usr/local/catalogues/catalogues"
+if command -v arm-linux-gnueabihf-strip >/dev/null 2>&1; then
+    arm-linux-gnueabihf-strip "${CAT_PAY}/usr/local/catalogues/catalogues"
+fi
+install -m 755 scripts/install/catalogues-start.sh "${CAT_PAY}/usr/local/catalogues/start.sh"
+install -m 755 scripts/install/catalogues-uninstall.sh \
+    "${CAT_PAY}/usr/local/catalogues/uninstall.sh"
+install -m 644 third_party/cacert.pem "${CAT_PAY}/usr/local/catalogues/cacert.pem"
+if [ -x "${OUT}/bin/curl" ]; then
+    mkdir -p "${CAT_PAY}/usr/local/catalogues/bin"
+    install -m 755 "${OUT}/bin/curl" "${CAT_PAY}/usr/local/catalogues/bin/curl"
+fi
+printf '%s\n' "${VERSION}" > "${CAT_PAY}/usr/local/catalogues/VERSION"
+chmod 644 "${CAT_PAY}/usr/local/catalogues/VERSION"
+# NickelMenu, as released, on top. Its own tgz puts libnm.so where nickel
+# loads plugins from and its documentation in .adds/nm on the drive.
+if [ -f "${OUT}/nickelmenu/KoboRoot.tgz" ]; then
+    tar -xzf "${OUT}/nickelmenu/KoboRoot.tgz" -C "${CAT_PAY}"
+    echo "bundling NickelMenu $(cat "${OUT}/nickelmenu/VERSION" 2>/dev/null || echo '?')"
+else
+    echo "no NickelMenu fetched (scripts/fetch-nickelmenu.sh); packaging without it"
+fi
+tar --owner=root --group=root --numeric-owner -czf "${STAGE}/catalogues-KoboRoot.tgz" \
+    -C "${CAT_PAY}" .
 
-ADDON="${STAGE}/addon"
-mkdir -p "${ADDON}/.kobo" "${ADDON}/.adds/nm"
-cp "${STAGE}/addon-KoboRoot.tgz" "${ADDON}/.kobo/KoboRoot.tgz"
-install -m 644 scripts/install/nm-crosskobo "${ADDON}/.adds/nm/crosskobo"
-# The library entries. The watcher writes these too, but shipping them means
-# they are there the first time the Kobo indexes the drive.
-cat > "${ADDON}/CrossKobo Catalogues.txt" <<TXT
-CrossKobo
-=========
+CAT="${STAGE}/catalogues"
+mkdir -p "${CAT}/.kobo" "${CAT}/.adds/nm" "${CAT}/.adds/catalogues"
+cp "${STAGE}/catalogues-KoboRoot.tgz" "${CAT}/.kobo/KoboRoot.tgz"
+install -m 644 scripts/install/nm-catalogues "${CAT}/.adds/nm/catalogues"
+# The catalogue file, so there is something to edit over USB before the
+# first tap. The program writes the same one if it is missing.
+cat > "${CAT}/.adds/catalogues/catalogues.txt" <<'TXT'
+# Catalogues
+#
+# One server per line. Edit this over USB, or paste in a line a friend
+# sent you; the page reads it fresh every time it opens.
+#
+#   Name | address
+#   Name | address | user | password
+#   Name | address | libgen
+#
+# Use a hostname rather than an IP number, so the same line works at
+# home and away. The kind of server is worked out from the address:
+# search.php or json.php means a search-format server, {searchTerms} a
+# search endpoint, anything else an OPDS feed. Say libgen or opds
+# outright if the guess is wrong.
+#
+# Examples of your own, commented out:
+# Shelfmark   | https://books.example.net/opds | me | secret
+# My server   | https://fic.example.net/search.php?req={searchTerms}
 
-Open this from your Kobo's library and the CrossKobo catalogue browser
-starts: your OPDS libraries, and the public-domain catalogues it ships
-with.
-
-Books you download land in the Downloads folder on this drive, where your
-Kobo finds them like anything copied over USB.
-
-Leave it with a swipe up from the bottom edge, or a page-turn button, and
-the Kobo software comes straight back.
-
-Deleting this file removes the entry; the add-on puts it back on the next
-restart unless you remove the add-on too.
+Project Gutenberg | https://m.gutenberg.org/ebooks.opds/
+Internet Archive  | https://bookserver.archive.org/catalog/
 TXT
-cat > "${ADDON}/CrossKobo Shelfmark.txt" <<TXT
-CrossKobo - Shelfmark
-=====================
+chmod 644 "${CAT}/.adds/catalogues/catalogues.txt"
+cat > "${CAT}/READ-ME-FIRST.txt" <<TXT
+Catalogues ${VERSION}
+=================
 
-Open this from your Kobo's library to go straight to the catalogue saved as
-"Shelfmark". Add it once - in the catalogue list, by address or with "Find
-on network" - and this entry opens it from then on.
-
-Leave it with a swipe up from the bottom edge, or a page-turn button.
-TXT
-chmod 644 "${ADDON}/CrossKobo Catalogues.txt" "${ADDON}/CrossKobo Shelfmark.txt"
-cat > "${ADDON}/READ-ME-FIRST.txt" <<TXT
-CrossKobo catalogues ${VERSION} - an add-on for the stock Kobo software
-=======================================================================
-
-This does NOT replace the Kobo interface. It adds OPDS catalogue browsing
-- Shelfmark, Calibre-Web, Kavita, Komga, BookLore, Project Gutenberg - to
-the menus of the software your Kobo already runs.
+Book catalogues - Shelfmark, Calibre-Web, Kavita, Komga, Project Gutenberg,
+and a search-format server of your own - in your Kobo's own browser. The
+Kobo software stays exactly as it is; this adds entries to its menu.
 
   1. Eject the Kobo safely and unplug it.
-  2. The device installs the add-on and restarts by itself.
-  3. Open the menu in the stock software. "CrossKobo", "Catalogues (OPDS)"
-     and "Shelfmark" are in it.
+  2. It installs and restarts by itself. Give it a minute.
+  3. On the home screen, open the NickelMenu tab at the bottom right and
+     tap "Catalogues" (or "Shelfmark", once you have added one).
 
-It needs NickelMenu, which is what puts entries in the stock menus:
+Everything is done in the Kobo's browser: tap a catalogue, tap a folder,
+tap a book, tap Download. Searching uses the Kobo's own keyboard.
 
-  https://github.com/pgaskin/NickelMenu
+Your servers go in .adds/catalogues/catalogues.txt on this drive, one per
+line - the file explains itself. A friend can send you a line to paste in.
 
-Install NickelMenu first (or afterwards - the order does not matter). The
-menu entries live in .adds/nm/crosskobo on this drive, which this zip has
-just written; edit that file to rename or remove them.
+Downloads land in the Downloads folder on this drive. Tap Sync on the home
+screen, or "Catalogues - add downloads to library" in the menu, and they
+appear in your library.
 
-Tapping an entry borrows the screen to show the catalogue browser, and
-hands it straight back to the Kobo software when you leave - swipe up from
-the bottom edge, or press a page-turn button.
+NickelMenu (https://github.com/pgaskin/NickelMenu, MIT licence) is
+installed with this; it is what puts the entries in the menu. If you
+already had it, nothing changes.
 
-Books download into the "Downloads" folder on this drive, where the stock
-library finds them like anything else copied over USB. Add a catalogue with
-the "Add" button; a server that needs a username and password can have
-them added to .crosskobo/settings.json.
-
-To remove it: unzip CrossKobo-catalogues-${VERSION}-uninstall.zip onto the
-drive and eject. That takes the add-on and its menu entries away and leaves
-your books and downloads alone.
+To remove: unzip Catalogues-${VERSION}-uninstall.zip onto this drive and
+eject. After the restart, tap "Remove Catalogues" in the menu. Nothing
+runs at boot, so nothing can leave the device stuck.
 TXT
-(cd "${ADDON}" && zip -q -r "${OUT}/CrossKobo-catalogues-${VERSION}-install.zip" \
-    .kobo .adds READ-ME-FIRST.txt "CrossKobo Catalogues.txt" "CrossKobo Shelfmark.txt")
+(cd "${CAT}" && zip -q -r "${OUT}/Catalogues-${VERSION}-install.zip" \
+    .kobo .adds READ-ME-FIRST.txt)
+
+# The uninstaller: a fresh copy of the removal script, and a menu that
+# offers it. The KoboRoot.tgz makes the firmware restart the device, which
+# is when NickelMenu reads the new menu. No boot hook, nothing that could
+# stand between the device and its own software.
+CAT_UN_PAY="${STAGE}/catalogues-uninstall-payload"
+mkdir -p "${CAT_UN_PAY}/usr/local/catalogues"
+install -m 755 scripts/install/catalogues-uninstall.sh \
+    "${CAT_UN_PAY}/usr/local/catalogues/uninstall.sh"
+tar --owner=root --group=root --numeric-owner -czf "${STAGE}/catalogues-uninstall-KoboRoot.tgz" \
+    -C "${CAT_UN_PAY}" .
+CAT_UN="${STAGE}/catalogues-uninstall"
+mkdir -p "${CAT_UN}/.kobo" "${CAT_UN}/.adds/nm"
+cp "${STAGE}/catalogues-uninstall-KoboRoot.tgz" "${CAT_UN}/.kobo/KoboRoot.tgz"
+install -m 644 scripts/install/nm-catalogues-remove "${CAT_UN}/.adds/nm/catalogues"
+cat > "${CAT_UN}/READ-ME-FIRST.txt" <<TXT
+Catalogues ${VERSION} uninstaller
+
+Eject the Kobo and unplug it; it restarts. Then open the NickelMenu tab
+and tap "Remove Catalogues". That takes away the program and its menu
+entries. Your books, the Downloads folder and .adds/catalogues (your
+catalogue file) are left alone.
+
+NickelMenu stays. To remove it as well, put an empty file named
+"uninstall" in the .adds/nm folder on this drive and restart.
+TXT
+(cd "${CAT_UN}" && zip -q -r "${OUT}/Catalogues-${VERSION}-uninstall.zip" \
+    .kobo .adds READ-ME-FIRST.txt)
 
 # ---------------------------------------------------------------------------
 # Firmware 4 uninstall package.
@@ -264,24 +285,6 @@ Your books, notebooks (the Notebooks folder) and CrossKobo settings (the
 gone.
 TXT
 (cd "${UNPKG}" && zip -q -r "${OUT}/CrossKobo-${VERSION}-uninstall.zip" .kobo READ-ME-FIRST.txt)
-
-# The catalogues add-on comes off with the same payload: it removes
-# /usr/local/crosskobo, any boot hook, and the NickelMenu entries, then
-# restores the stock animation script.
-ADDON_UN="${STAGE}/addon-uninstall"
-mkdir -p "${ADDON_UN}/.kobo"
-cp "${STAGE}/uninstall-KoboRoot.tgz" "${ADDON_UN}/.kobo/KoboRoot.tgz"
-cat > "${ADDON_UN}/READ-ME-FIRST.txt" <<TXT
-CrossKobo catalogues ${VERSION} uninstaller
-
-Eject the Kobo and unplug it. On the next boot the add-on is removed, along
-with its NickelMenu entries, and the stock Kobo software carries on as
-before.
-
-Your books, the Downloads folder and the .crosskobo folder are left alone.
-TXT
-(cd "${ADDON_UN}" && zip -q -r "${OUT}/CrossKobo-catalogues-${VERSION}-uninstall.zip" \
-    .kobo READ-ME-FIRST.txt)
 
 # ---------------------------------------------------------------------------
 # Firmware 5 packages, which use .kobo/update.tar instead of KoboRoot.tgz.

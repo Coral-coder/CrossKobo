@@ -97,7 +97,7 @@ jobs:
             sh -n "$f"
           done
           shellcheck -s sh -S warning scripts/install/*.sh scripts/install/crosskobo.init \
-            scripts/package.sh tests/test_package.sh
+            scripts/package.sh scripts/fetch-nickelmenu.sh tests/test_package.sh
 
       - name: Configure
         run: |
@@ -108,16 +108,32 @@ jobs:
       - name: Build
         run: cmake --build build-arm -j"$(nproc)"
 
-      - name: Check the binary is a static ARM executable
+      - name: Check the binaries are static ARM executables
         run: |
-          file build-arm/crosskobo
-          file build-arm/crosskobo | grep -q "ARM"
-          file build-arm/crosskobo | grep -q "statically linked"
+          for b in build-arm/crosskobo build-arm/catalogues; do
+            file "$b"
+            file "$b" | grep -q "ARM"
+            file "$b" | grep -q "statically linked"
+          done
 
-      - name: Run the device binary under emulation
+      - name: Run the device binaries under emulation
         run: |
           qemu-arm-static ./build-arm/crosskobo --version
+          qemu-arm-static ./build-arm/catalogues --version
           qemu-arm-static ./build-arm/crosskobo-sim --root out/arm-root --out out/arm
+
+      # The Catalogues package carries NickelMenu, so the menu entries are
+      # there without anything to install by hand. Pinned by hash.
+      - name: Cache NickelMenu
+        id: nickelmenu-cache
+        uses: actions/cache@v4
+        with:
+          path: release/nickelmenu
+          key: nickelmenu-${{ hashFiles('scripts/fetch-nickelmenu.sh') }}
+
+      - name: Fetch NickelMenu
+        if: steps.nickelmenu-cache.outputs.cache-hit != 'true'
+        run: scripts/fetch-nickelmenu.sh
 
       # The fetcher CrossKobo ships for https: a static armhf curl with its
       # own TLS and its own DNS. Cached, because building it takes longer
@@ -167,10 +183,12 @@ jobs:
             Unpack a zip to the root of the Kobo's USB drive and eject; the
             device installs it and restarts by itself.
 
-            **`CrossKobo-catalogues-*-install.zip`** - an add-on. The stock
-            Kobo software stays in charge; this only adds OPDS catalogue
-            browsing (Shelfmark, Calibre-Web, Kavita, Komga, BookLore,
-            Gutenberg) to its menus, through NickelMenu. No boot takeover.
+            **`Catalogues-*-install.zip`** - book catalogues in the Kobo's
+            own browser: Shelfmark, Calibre-Web, Kavita, Komga, Project
+            Gutenberg, and a search-format server of your own, listed in a
+            text file on the drive. The stock software stays exactly as it
+            is; NickelMenu is bundled and puts the entries in its menu.
+            Nothing runs at boot. See `docs/CATALOGUES.md`. Firmware 4.x.
 
             **`CrossKobo-*-install.zip`** - the full interface, which starts
             instead of the stock Kobo home screen. Firmware 5.x devices use

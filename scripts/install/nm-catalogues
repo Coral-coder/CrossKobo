@@ -1,0 +1,26 @@
+# Catalogues - book catalogues in the Kobo's own browser.
+#
+# Each entry starts the Catalogues server (a few hundred milliseconds the
+# first time, nothing after that) and opens the Kobo's browser on it. The
+# browser does the touching, typing and scrolling; the server does the
+# books.
+#
+# On firmware 4.23 and later the "main" entries appear in the NickelMenu
+# tab at the bottom right of the home screen. Rename or remove entries by
+# editing this file; NickelMenu reads it again when the device restarts.
+
+menu_item :main :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_success :nickel_browser :modal:http://127.0.0.1:6420/
+  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.
+
+menu_item :main :Shelfmark :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_success :nickel_browser :modal:http://127.0.0.1:6420/?open=Shelfmark
+  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.
+
+# Downloads land in the Downloads folder on the drive. The Kobo notices them
+# when it next looks; this asks it to look now.
+menu_item :main :Catalogues - add downloads to library :nickel_misc :rescan_books
+
+menu_item :library :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_success :nickel_browser :modal:http://127.0.0.1:6420/
+  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.

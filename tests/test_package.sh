@@ -188,69 +188,179 @@ unzip -l "${ZIP}" | grep -q 'READ-ME-FIRST\.txt'
 check $? "zip carries instructions"
 
 # ---------------------------------------------------------------------------
-echo "catalogues add-on:"
-ADDON_ZIP=""
-for f in release/CrossKobo-catalogues-*-install.zip; do
-    ADDON_ZIP="${f}"
+echo "catalogues package:"
+CAT_ZIP=""
+for f in release/Catalogues-*-install.zip; do
+    CAT_ZIP="${f}"
 done
-[ -f "${ADDON_ZIP}" ]
-check $? "add-on install zip exists"
-mkdir -p "${WORK}/addon"
-unzip -q -o "${ADDON_ZIP}" -d "${WORK}/addon"
-[ -f "${WORK}/addon/.adds/nm/crosskobo" ]
-check $? "add-on ships the NickelMenu entries on the drive"
-grep -q 'menu-launch.sh' "${WORK}/addon/.adds/nm/crosskobo"
-check $? "menu entries launch through menu-launch.sh"
-mkdir -p "${WORK}/addonroot"
-tar -xzf "${WORK}/addon/.kobo/KoboRoot.tgz" -C "${WORK}/addonroot"
-[ -x "${WORK}/addonroot/usr/local/crosskobo/crosskobo" ]
-check $? "add-on carries the binary"
-[ -x "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh" ]
-check $? "add-on carries the menu launcher"
-[ -x "${WORK}/addonroot/usr/local/crosskobo/crosskobo-watch.init" ]
-check $? "add-on carries the watcher init script"
-[ -x "${WORK}/addonroot/etc/init.d/crosskobo-watch" ]
-check $? "add-on installs the watcher for firmware 5"
-[ -L "${WORK}/addonroot/etc/rcS.d/S99crosskobo-watch" ]
-check $? "add-on starts the watcher from rcS"
-[ -f "${WORK}/addon/CrossKobo Catalogues.txt" ]
-check $? "add-on ships the library entry"
+[ -f "${CAT_ZIP}" ]
+check $? "install zip exists"
+mkdir -p "${WORK}/cat"
+unzip -q -o "${CAT_ZIP}" -d "${WORK}/cat"
+[ -f "${WORK}/cat/.adds/nm/catalogues" ]
+check $? "ships the NickelMenu entries on the drive"
+[ -f "${WORK}/cat/.adds/catalogues/catalogues.txt" ]
+check $? "ships the catalogue file on the drive"
+grep -q '^Project Gutenberg' "${WORK}/cat/.adds/catalogues/catalogues.txt"
+check $? "catalogue file starts with the public catalogues"
+if grep -viE '^#|gutenberg|archive\.org|example\.net' "${WORK}/cat/.adds/catalogues/catalogues.txt" |
+        grep -q '://'; then
+    check 1 "catalogue file ships no other addresses"
+else
+    check 0 "catalogue file ships no other addresses"
+fi
+mkdir -p "${WORK}/catroot"
+tar -xzf "${WORK}/cat/.kobo/KoboRoot.tgz" -C "${WORK}/catroot"
+[ -x "${WORK}/catroot/usr/local/catalogues/catalogues" ]
+check $? "carries the program"
+case "$(file -b "${WORK}/catroot/usr/local/catalogues/catalogues")" in
+    *"ARM"*"statically linked"*) check 0 "program is a static ARM executable" ;;
+    *) check 1 "program is a static ARM executable" ;;
+esac
+if command -v qemu-arm-static >/dev/null 2>&1; then
+    qemu-arm-static "${WORK}/catroot/usr/local/catalogues/catalogues" --version | grep -q 'catalogues'
+    check $? "program runs"
+fi
+[ -x "${WORK}/catroot/usr/local/catalogues/start.sh" ]
+check $? "carries the launcher"
+[ -x "${WORK}/catroot/usr/local/catalogues/uninstall.sh" ]
+check $? "carries the remover"
+[ -f "${WORK}/catroot/usr/local/catalogues/cacert.pem" ]
+check $? "carries the certificates"
+[ -f "${WORK}/catroot/usr/local/catalogues/VERSION" ]
+check $? "carries its version"
+if [ -f release/nickelmenu/KoboRoot.tgz ]; then
+    [ -f "${WORK}/catroot/usr/local/Kobo/imageformats/libnm.so" ]
+    check $? "bundles NickelMenu"
+    [ -f "${WORK}/catroot/mnt/onboard/.adds/nm/doc" ]
+    check $? "bundles the NickelMenu documentation"
+else
+    echo "  --   no NickelMenu fetched in this build (scripts/fetch-nickelmenu.sh)"
+fi
+if [ -f "${WORK}/catroot/usr/local/catalogues/bin/curl" ]; then
+    check 0 "bundles the fetcher"
+else
+    echo "  --   no bundled fetcher in this build (built by CI)"
+fi
+# Nothing of CrossKobo, and nothing at boot: this package is the program,
+# the menu entries and NickelMenu. No init script, no animation hook, no
+# rcS symlink, no framebuffer interface.
+if [ -e "${WORK}/catroot/etc" ] || [ -e "${WORK}/catroot/usr/local/crosskobo" ]; then
+    check 1 "nothing runs at boot and nothing of CrossKobo is in it"
+else
+    check 0 "nothing runs at boot and nothing of CrossKobo is in it"
+fi
+if find "${WORK}/catroot" -type f | grep -qi crosskobo; then
+    check 1 "no CrossKobo files in the payload"
+else
+    check 0 "no CrossKobo files in the payload"
+fi
+# The menu entries: start the server, then open the browser on it. Every
+# launch entry has to wait for the server (cmd_output, not cmd_spawn) or
+# the browser opens on nothing.
+NM="${WORK}/cat/.adds/nm/catalogues"
+grep -q '^menu_item :main :Catalogues :cmd_output' "${NM}"
+check $? "menu entry starts the server and waits for it"
+grep -q 'chain_success :nickel_browser :modal:http://127.0.0.1:6420/$' "${NM}"
+check $? "menu entry then opens the Kobo browser on it"
+grep -q '^menu_item :main :Shelfmark' "${NM}"
+check $? "Shelfmark has its own entry"
+grep -q 'open=Shelfmark' "${NM}"
+check $? "Shelfmark entry opens the catalogue by name"
+grep -q 'nickel_misc :rescan_books' "${NM}"
+check $? "a menu entry adds downloads to the library"
+grep -q '^menu_item :library :Catalogues' "${NM}"
+check $? "the library has an entry too"
+if grep -q 'cmd_spawn' "${NM}"; then
+    check 1 "no entry opens the browser without waiting for the server"
+else
+    check 0 "no entry opens the browser without waiting for the server"
+fi
+if grep -q 'crosskobo' "${NM}"; then
+    check 1 "menu entries mention nothing of CrossKobo"
+else
+    check 0 "menu entries mention nothing of CrossKobo"
+fi
+# The launcher: start once, wait for the answer, within the menu's timeout.
+START="${WORK}/catroot/usr/local/catalogues/start.sh"
+grep -q -- '--ping' "${START}"
+check $? "launcher checks whether the server is already up"
+grep -q 'setsid' "${START}"
+check $? "launcher detaches the server from the menu"
+grep -q -- '--idle' "${START}"
+check $? "server is started with an idle timeout"
+if grep -vE '^[[:space:]]*#' "${START}" | grep -qE 'killall|pkill|nickel|/dev/fb|/dev/input'; then
+    check 1 "launcher leaves the stock software alone"
+else
+    check 0 "launcher leaves the stock software alone"
+fi
+# The launcher must run to completion in the sandbox with a fake binary
+# that answers the ping, and fail cleanly with one that never does.
+mkdir -p "${WORK}/start-ok/bin"
+cat > "${WORK}/start-ok/bin/catalogues" <<'FAKE'
+#!/bin/sh
+exit 0
+FAKE
+chmod 755 "${WORK}/start-ok/bin/catalogues"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/start-ok/bin\"#" "${START}" > "${WORK}/start-ok/run.sh"
+sh "${WORK}/start-ok/run.sh"
+check $? "launcher exits 0 when the server answers"
+mkdir -p "${WORK}/start-bad/bin"
+cat > "${WORK}/start-bad/bin/catalogues" <<'FAKE'
+#!/bin/sh
+case "$1" in --ping) exit 1 ;; esac
+sleep 30
+FAKE
+chmod 755 "${WORK}/start-bad/bin/catalogues"
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/start-bad/bin\"#" \
+    -e 's/while \[ ${i} -lt 30 \]/while [ ${i} -lt 2 ]/' "${START}" > "${WORK}/start-bad/run.sh"
+if sh "${WORK}/start-bad/run.sh"; then
+    check 1 "launcher exits 1 when the server never answers"
+else
+    check 0 "launcher exits 1 when the server never answers"
+fi
+pkill -f "${WORK}/start-bad/bin/catalogues" 2>/dev/null || true
 
-# The whole point of this package: the stock software stays in charge. It may
-# start a watcher and draw the boot animation, and nothing else.
-ADDON_HOOK="${WORK}/addonroot/etc/init.d/on-animator.sh"
-grep -q 'crosskobo-watch.init' "${ADDON_HOOK}"
-check $? "firmware 4 hook starts the watcher"
-grep -q 'showpic' "${ADDON_HOOK}"
-check $? "firmware 4 hook draws the stock animation"
-grep -q 'frames} -lt' "${ADDON_HOOK}"
-check $? "firmware 4 hook caps its animation loop"
-# Same trap as the uninstaller: the firmware kills the animation by process
-# name, so the hook must draw it inline rather than exec a copy through sh.
-if grep -qE '^[^#]*exec[[:space:]]+/bin/sh' "${ADDON_HOOK}"; then
-    check 1 "firmware 4 hook keeps the animation in this process"
+echo "catalogues uninstaller:"
+CAT_UN_ZIP=""
+for f in release/Catalogues-*-uninstall.zip; do
+    CAT_UN_ZIP="${f}"
+done
+[ -f "${CAT_UN_ZIP}" ]
+check $? "uninstall zip exists"
+mkdir -p "${WORK}/catun" "${WORK}/catunroot"
+unzip -q -o "${CAT_UN_ZIP}" -d "${WORK}/catun"
+tar -xzf "${WORK}/catun/.kobo/KoboRoot.tgz" -C "${WORK}/catunroot"
+[ -f "${WORK}/catun/.adds/nm/catalogues" ]
+check $? "replaces the menu entries with the remover"
+grep -q 'Remove Catalogues' "${WORK}/catun/.adds/nm/catalogues"
+check $? "offers Remove Catalogues in the menu"
+[ -x "${WORK}/catunroot/usr/local/catalogues/uninstall.sh" ]
+check $? "carries a fresh copy of the removal script"
+# The whole point: nothing at boot. No init script, no animation hook.
+if [ -e "${WORK}/catunroot/etc" ]; then
+    check 1 "uninstaller installs nothing that runs at boot"
 else
-    check 0 "firmware 4 hook keeps the animation in this process"
+    check 0 "uninstaller installs nothing that runs at boot"
 fi
-if grep -rqE 'killall[^#]*nickel|crosskobo\.sh' "${WORK}/addonroot/etc" \
-        "${WORK}/addonroot/usr/local/crosskobo/crosskobo-watch.init"; then
-    check 1 "add-on never stops the stock software at boot"
+UN="${WORK}/catunroot/usr/local/catalogues/uninstall.sh"
+grep -q 'rm -rf /usr/local/catalogues' "${UN}"
+check $? "remover takes the install directory"
+grep -q 'rm -f /mnt/onboard/.adds/nm/catalogues' "${UN}"
+check $? "remover takes the menu entries"
+# One path under /mnt, and no wildcard: the catalogue file, the downloads
+# and every book stay.
+if grep -E '^[^#]*(rm|mv|dd|mkfs)[^#]*/mnt/' "${UN}" |
+        grep -vqx 'rm -f /mnt/onboard/.adds/nm/catalogues'; then
+    check 1 "remover deletes nothing else under /mnt"
 else
-    check 0 "add-on never stops the stock software at boot"
+    check 0 "remover deletes nothing else under /mnt"
 fi
-grep -q -- '--return-to-kobo' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
-check $? "menu launcher hands the screen back on exit"
-# The watcher is itself a process named crosskobo, so a "pidof crosskobo"
-# guard in the launcher is always true and every tap does nothing. It has to
-# ask about its own lock instead.
-if grep -vE '^[[:space:]]*#' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh" |
-        grep -q 'pidof crosskobo'; then
-    check 1 "menu launcher does not mistake the watcher for a running app"
+if grep -q 'libnm.so\|imageformats' "${UN}"; then
+    check 1 "remover leaves NickelMenu alone"
 else
-    check 0 "menu launcher does not mistake the watcher for a running app"
+    check 0 "remover leaves NickelMenu alone"
 fi
-grep -q 'crosskobo-launch.pid' "${WORK}/addonroot/usr/local/crosskobo/menu-launch.sh"
-check $? "menu launcher locks on its own pid file"
 
 # ---------------------------------------------------------------------------
 echo "uninstall payload:"

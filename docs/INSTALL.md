@@ -13,34 +13,12 @@ release has not been run on real hardware yet.
 
 ## Two ways to install
 
-**The catalogues add-on** leaves your Kobo exactly as it is and adds OPDS
-catalogue browsing - Shelfmark, Calibre-Web, Kavita, Komga, BookLore,
-Project Gutenberg - to the stock software's menus. Nothing takes over the
-boot, and if you do not like it, nothing has to be undone beyond unzipping
-the uninstaller.
-
-1. Unpack `CrossKobo-catalogues-<version>-install.zip` to the root of the
-   Kobo's drive and eject. The device installs it and restarts. That is the
-   whole installation - nothing else is needed.
-2. In your Kobo's library, open **CrossKobo Catalogues**. It looks like a
-   book because that is the one thing the stock software can be asked to do
-   from outside it: the add-on watches for that file being opened and starts
-   the catalogue browser. **CrossKobo Shelfmark** goes straight to the
-   catalogue you have saved under that name.
-3. Leaving the browser - swipe up from the bottom edge, or press a page-turn
-   button - hands the screen straight back to the Kobo software.
-
-If you also have [NickelMenu](https://github.com/pgaskin/NickelMenu)
-installed, the add-on additionally writes `.adds/nm/crosskobo`, which puts
-**CrossKobo**, **Catalogues (OPDS)** and **Shelfmark** in the stock menus.
-That is optional: the library entries work without it. The bottom bar of the
-stock home screen belongs to nickel itself, and putting anything there means
-patching nickel, which this project does not do.
-
-Books download into `Downloads` on the drive, where the stock library finds
-them like anything copied over USB. The menu entries are a plain text file
-at `.adds/nm/crosskobo`: rename or remove them by editing it. To remove the
-add-on, unpack `CrossKobo-catalogues-<version>-uninstall.zip` and eject.
+**Catalogues** leaves your Kobo exactly as it is and puts book catalogues
+- Shelfmark, Calibre-Web, Kavita, Komga, Project Gutenberg, and a
+search-format server of your own - in the Kobo's own browser, from an
+entry in the stock menu. Nothing runs at boot and nothing of the CrossKobo
+interface is in it. It is its own package, `Catalogues-<version>-install.zip`,
+and has its own page: [docs/CATALOGUES.md](CATALOGUES.md).
 
 **The full CrossKobo interface** replaces the stock software at boot: its
 own library, reader, handwritten notebooks and statistics. That is what the
