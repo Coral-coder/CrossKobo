@@ -420,8 +420,23 @@ bool libgen_search(const std::string& base_address, const std::string& query,
   // /fiction/?q=; the classic non-fiction table is /search.php?req=; newer
   // forks /index.php?req=; Anna's-Archive-style front-ends
   // /search?...&q=&display=table; some expose a JSON API at /json.php.
+  // libgen.li / libgen.gl (and clones) answer "No Request keys" to a bare
+  // req=term: their index.php search must also say which columns to match,
+  // which object kinds to return and which topics to include. This is the
+  // full search - fiction, non-fiction, comics, magazines - the way the site
+  // itself issues it.
+  const std::string li_keys =
+      "&columns%5B%5D=t&columns%5B%5D=a&columns%5B%5D=s&columns%5B%5D=y"
+      "&columns%5B%5D=p&columns%5B%5D=i"
+      "&objects%5B%5D=f&objects%5B%5D=e&objects%5B%5D=s&objects%5B%5D=a"
+      "&objects%5B%5D=p&objects%5B%5D=w"
+      "&topics%5B%5D=l&topics%5B%5D=c&topics%5B%5D=f&topics%5B%5D=a"
+      "&topics%5B%5D=m&topics%5B%5D=r&topics%5B%5D=s"
+      "&res=100&filesuns=all";
   auto add_probes = [&](const std::string& q_or_empty) {
     std::string q = q_or_empty;                  // the param the user named, if any
+    // libgen.li first - the full request, which is what most clones are.
+    candidates.push_back(endpoint.base + "/index.php?req=" + encoded + li_keys);
     if (!q.empty()) {
       // We know the parameter name (e.g. "req="), just not the page. Try it
       // on each real search page before giving up.
@@ -463,14 +478,33 @@ bool libgen_search(const std::string& base_address, const std::string& query,
   }
 
   std::string last_error;
-  std::string last_body;   // the last non-empty answer, kept for diagnosis
-  std::string last_url;
+  std::string probe_log;   // one line per attempt, for diagnosis
+  std::string best_body;   // the most useful answer to keep for inspection
+  std::string best_url;
+  int best_score = -1;
+  // How informative is an unparsed answer? A real search page from index.php
+  // beats a stray front page, which beats an error string.
+  auto score = [](const std::string& url, const std::string& body) {
+    int s = 0;
+    if (url.find("index.php") != std::string::npos) s += 4;
+    if (body.find("<table") != std::string::npos ||
+        body.find("<tr") != std::string::npos) s += 3;
+    if (body.find("Welcome to nginx") != std::string::npos) s -= 2;
+    return s;
+  };
   for (const std::string& url : candidates) {
     HttpResponse response = http_get(url, 20000);
+    std::string snippet = trim(response.body).substr(0, 80);
+    for (char& ch : snippet) {
+      if (ch == '\n' || ch == '\r') ch = ' ';
+    }
     if (!response.error.empty()) {
       last_error = response.error;
+      probe_log += format("%s -> error: %s\n", url.c_str(), response.error.c_str());
       continue;
     }
+    probe_log += format("%s -> %d, %zu bytes: %s\n", url.c_str(), response.status,
+                        response.body.size(), snippet.c_str());
     if (!response.ok()) {
       last_error = format("%s answered %d", url.c_str(), response.status);
       continue;
@@ -480,8 +514,6 @@ bool libgen_search(const std::string& base_address, const std::string& query,
       last_error = "an empty answer";
       continue;
     }
-    last_body = body;
-    last_url = url;
     if (body[0] == '[' || body[0] == '{') {
       if (parse_libgen_json(body, results) && !results.empty()) {
         CK_LOGI("search: %s -> %zu results (json)", url.c_str(), results.size());
@@ -493,17 +525,23 @@ bool libgen_search(const std::string& base_address, const std::string& query,
       CK_LOGI("search: %s -> %zu results (html)", url.c_str(), results.size());
       return true;
     }
+    int s = score(url, body);
+    if (s > best_score) {
+      best_score = s;
+      best_body = body;
+      best_url = url;
+    }
     last_error = "nothing recognisable in the answer";
     CK_LOGI("search: %s answered %zu bytes with nothing to show", url.c_str(), body.size());
   }
-  // The server answered but nothing parsed. Save exactly what it sent so the
-  // markup can be looked at rather than guessed - the one thing that turns a
-  // "couldn't parse" into a fix.
-  if (!last_body.empty()) {
+  // Nothing parsed. Save the log of every page tried, plus the most useful
+  // answer, so what the server actually does can be read rather than guessed.
+  {
     std::string dump = paths().data + "/last-search.html";
-    if (fs::write_file_atomic(dump, "<!-- " + last_url + " -->\n" + last_body)) {
-      CK_LOGI("search: saved unparsed answer (%zu bytes) to %s", last_body.size(),
-              dump.c_str());
+    std::string contents = "<!-- Shelfmark search diagnostics\nquery: " + query +
+                           "\nkept: " + best_url + "\n\n" + probe_log + "-->\n" + best_body;
+    if (fs::write_file_atomic(dump, contents)) {
+      CK_LOGI("search: saved diagnostics to %s", dump.c_str());
     }
   }
   error = last_error.empty() ? "The server did not answer." : last_error;
