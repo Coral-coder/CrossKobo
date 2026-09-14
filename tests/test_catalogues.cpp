@@ -361,7 +361,7 @@ int main() {
   std::string sm = fetch(kAppPort, "GET", "/shelfmark");
   CHECK(has(sm, "HTTP/1.1 200"));
   CHECK(has(sm, "<h1>Shelfmark</h1>"));
-  CHECK(has(sm, "#6a1b9a"));                        // its own colour, not the blue
+  CHECK(has(sm, "#0369a1"));                        // its own colour, not the blue
   CHECK(has(sm, "action=\"/shelfmark/search\""));
   CHECK(has(sm, "My Fic"));
   // A search hits the source and lists results, each a Shelfmark book link.
@@ -369,7 +369,7 @@ int main() {
   CHECK(has(smr, "HTTP/1.1 200"));
   CHECK(has(smr, "Fic about dragons"));
   CHECK(has(smr, "/shelfmark/book?s=0"));
-  CHECK(has(smr, "#6a1b9a"));
+  CHECK(has(smr, "#0369a1"));
   std::string smbook_href = link_after(smr, "Fic about dragons");
   CHECK(starts_with(smbook_href, "/shelfmark/book?s=0"));
   std::string smbook = fetch(kAppPort, "GET", smbook_href);

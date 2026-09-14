@@ -498,7 +498,7 @@ Response status() {
 // libgen search shape a lot of self-hosted things speak), and OPDS servers
 // that advertise a search are searched too. No addresses are shipped.
 
-const char* kShelfmarkAccent = "#6a1b9a";
+const char* kShelfmarkAccent = "#0369a1";   // calibrain's sky-blue primary
 
 std::string shelfmark_file_path() { return ck::paths().data + "/shelfmark.txt"; }
 
@@ -527,6 +527,24 @@ Response sm_page(const std::string& title, const std::string& body,
   return html(page(title, body, back_href, back_label, kShelfmarkAccent));
 }
 
+// A calibrain-style result card: cover on top, title, author, a dotted meta
+// line, and a full-width Download bar flush at the bottom. The whole card is
+// the link to the book's page, where the download happens.
+std::string sm_card(const std::string& href, const std::string& title,
+                    const std::string& author, const std::string& meta,
+                    const std::string& cover) {
+  std::string out = "<a class=\"card\" href=\"" + esc(href) + "\">";
+  out += "<div class=\"cover\">";
+  if (!cover.empty()) out += "<img src=\"" + esc(cover) + "\" alt=\"\">";
+  else out += "No Cover";
+  out += "</div><div class=\"cb\"><div class=\"ct\">" +
+         esc(title.empty() ? "Untitled" : title) + "</div>";
+  if (!author.empty()) out += "<div class=\"ca\">" + esc(author) + "</div>";
+  if (!meta.empty()) out += "<div class=\"cm\">" + esc(meta) + "</div>";
+  out += "</div><div class=\"cd\">Download</div></a>\n";
+  return out;
+}
+
 // One result, whichever kind of server it came from. `s` is the source
 // index, so the download knows which server (and which credentials) to use.
 std::string sm_libgen_row(size_t s, const std::string& label, const ck::SearchResult& r,
@@ -536,12 +554,16 @@ std::string sm_libgen_row(size_t s, const std::string& label, const ck::SearchRe
                      "&author=" + ck::url_encode(r.author) + "&ext=" + ck::url_encode(r.extension) +
                      "&size=" + ck::url_encode(r.size_text) + "&year=" + ck::url_encode(r.year) +
                      "&back=" + ck::url_encode(back);
-  std::string meta = r.author;
-  if (!r.year.empty()) meta += (meta.empty() ? "" : " · ") + r.year;
-  if (!r.size_text.empty()) meta += (meta.empty() ? "" : " · ") + r.size_text;
-  if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
-  return row(href, r.title.empty() ? "Untitled" : r.title, meta, ck::to_upper(r.extension),
-             r.cover_url);
+  // year · FORMAT · size · [server], the way calibrain's card meta reads.
+  std::string meta;
+  auto add = [&](const std::string& s) {
+    if (!s.empty()) meta += (meta.empty() ? "" : " · ") + s;
+  };
+  add(r.year);
+  add(ck::to_upper(r.extension));
+  add(r.size_text);
+  add(label);
+  return sm_card(href, r.title, r.author, meta, r.cover_url);
 }
 
 std::string sm_opds_row(size_t s, const std::string& label, const ck::OpdsEntry& e,
@@ -550,10 +572,9 @@ std::string sm_opds_row(size_t s, const std::string& label, const ck::OpdsEntry&
                      ck::url_encode(e.download_url) + "&title=" + ck::url_encode(e.title) +
                      "&author=" + ck::url_encode(e.author) + "&type=" +
                      ck::url_encode(e.download_type) + "&back=" + ck::url_encode(back);
-  std::string meta = e.author;
+  std::string meta = ck::to_upper(ck::fs::extension(e.filename()));
   if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
-  std::string tag = ck::to_upper(ck::fs::extension(e.filename()));
-  return row(href, e.title.empty() ? "Untitled" : e.title, meta, tag);
+  return sm_card(href, e.title, e.author, meta, e.cover_url);
 }
 
 std::string shelfmark_setup_note() {

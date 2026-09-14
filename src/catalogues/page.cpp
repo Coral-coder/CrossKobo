@@ -22,12 +22,15 @@ a{color:inherit;text-decoration:none}
 .row .m{display:block;font-size:18px;color:#444;margin-top:4px}
 .row .g{float:right;margin-left:12px;font-size:16px;padding:4px 10px;border:2px solid #1d4f91;border-radius:6px;color:#1d4f91;font-family:Helvetica,Arial,sans-serif}
 .row img{float:left;width:64px;margin:0 14px 4px 0;border:1px solid #ccc;background:#eee}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin:14px 0}
-.grid .row{border:2px solid #ddd;border-bottom:2px solid #ddd;border-radius:10px;padding:12px 10px;text-align:center}
-.grid .row img{float:none;display:block;width:auto;max-width:120px;max-height:180px;margin:0 auto 10px;border:1px solid #ccc;background:#eee}
-.grid .row .t{font-size:19px;line-height:1.25}
-.grid .row .m{font-size:15px}
-.grid .row .g{float:none;display:inline-block;margin:8px 0 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px;margin:16px 0}
+.card{display:flex;flex-direction:column;background:#fff;border:1px solid #e5e5e5;border-radius:12px;overflow:hidden}
+.card .cover{width:100%;aspect-ratio:2/3;background:#e5e5e5;display:flex;align-items:center;justify-content:center;color:#999;font-size:14px;font-family:Helvetica,Arial,sans-serif}
+.card .cover img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.card .cb{padding:12px;flex:1 1 auto}
+.card .ct{font-size:16px;font-weight:bold;line-height:1.25;color:#333}
+.card .ca{font-size:14px;color:#555;margin-top:4px}
+.card .cm{font-size:12px;color:#777;margin-top:6px;font-family:Helvetica,Arial,sans-serif}
+.card .cd{background:#0369a1;color:#fff;text-align:center;font-weight:bold;padding:12px;font-family:Helvetica,Arial,sans-serif}
 .row.nav .t{color:#1d4f91}
 .row.nav .t:before{content:"\25B8 ";color:#1d4f91}
 form.search{margin:12px 0 18px;overflow:hidden}
@@ -53,7 +56,12 @@ std::string esc(const std::string& text) { return html_escape(text); }
 // Recolours the parts that carry the blue accent, so a section can look
 // like its own thing rather than another page of the same app.
 static std::string accent_style(const std::string& c) {
-  return ".top{background:" + c + "}"
+  // Shelfmark is the only accented section, and it is themed to look like
+  // calibrain: a light-grey ground and a clean sans face rather than the
+  // reader's serif.
+  return "body{background:#f8f8f8;font-family:-apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}"
+         ".body{padding:12px 18px 40px}"
+         ".top{background:" + c + "}"
          ".row .g{border-color:" + c + ";color:" + c + "}"
          ".row.nav .t{color:" + c + "}.row.nav .t:before{color:" + c + "}"
          "form.search input[type=text]{border-color:" + c + "}"
