@@ -643,20 +643,13 @@ bool libgen_resolve_download(const std::string& base_address, const SearchResult
   }
   // The reference downloader's path: the ads.php page for the md5 carries a
   // keyed get.php link (the key is a per-page token, not derivable), and the
-  // file GET must be sent with that ads page as its Referer. Do exactly that.
-  std::string ads = endpoint.base + "/ads.php?md5=" + result.md5;
-  HttpResponse ads_page = http_get(ads, 15000);
-  if (ads_page.ok() && !ads_page.body.empty()) {
-    std::string link = get_link_from_ads_page(ads_page.body, endpoint.base);
-    if (!link.empty()) {
-      url_out = link;
-      referer_out = ads;
-      return true;
-    }
-  }
-  // Fallbacks for forks that are not libgen.li: other pages that link to the
-  // file, scraped the same way, then any file-looking link on them.
+  // file GET must be sent with that ads page as its Referer. The other pages
+  // are fallbacks for forks that are not libgen.li.
+  std::string diag = "Shelfmark download diagnostics\nmd5: " + result.md5 + "\n\n";
+  std::string kept_body;   // the page we most want to look at if this fails
+  std::string kept_url;
   std::vector<std::string> pages = {
+      endpoint.base + "/ads.php?md5=" + result.md5,
       endpoint.base + "/index.php?md5=" + result.md5,
       endpoint.base + "/file.php?md5=" + result.md5,
       endpoint.base + "/main/" + result.md5,
@@ -664,16 +657,37 @@ bool libgen_resolve_download(const std::string& base_address, const SearchResult
   };
   for (const std::string& url : pages) {
     HttpResponse response = http_get(url, 15000);
+    std::string snippet = trim(response.body).substr(0, 100);
+    for (char& ch : snippet) {
+      if (ch == '\n' || ch == '\r') ch = ' ';
+    }
+    diag += format("%s -> %d, %zu bytes: %s\n", url.c_str(), response.status,
+                   response.body.size(), snippet.c_str());
     if (!response.ok() || response.body.empty()) continue;
+    if (kept_body.empty() || url.find("ads.php") != std::string::npos) {
+      kept_body = response.body;   // prefer the ads page for inspection
+      kept_url = url;
+    }
     std::string link = get_link_from_ads_page(response.body, endpoint.base);
     if (link.empty()) link = direct_link_from_page(response.body, endpoint.base);
     if (!link.empty()) {
+      diag += "\nfound download link: " + link + "\n";
+      CK_LOGI("download: resolved %s -> %s", url.c_str(), link.c_str());
+      // Save the trace even on success, so a later download failure has the
+      // page that produced the link.
+      fs::write_file_atomic(paths().data + "/last-download.html",
+                            "<!-- " + diag + "kept: " + kept_url + " -->\n" + kept_body);
       url_out = link;
       referer_out = url;
       return true;
     }
   }
-  error = "Could not find a download link for that result.";
+  diag += "\nNo get.php/key link found on any page.\n";
+  fs::write_file_atomic(paths().data + "/last-download.html",
+                        "<!-- " + diag + "kept: " + kept_url + " -->\n" + kept_body);
+  CK_LOGW("download: no link found for md5 %s (saved last-download.html)", result.md5.c_str());
+  error = "Could not find a download link on the book's page. The page was saved "
+          "to .adds/catalogues/last-download.html so it can be looked at.";
   return false;
 }
 
@@ -713,24 +727,36 @@ bool libgen_download(const std::string& base, const SearchResult& result,
   if (!user.empty()) {
     request.headers["Authorization"] = "Basic " + base64_encode(user + ":" + password);
   }
+  CK_LOGI("download: GET %s (referer %s)", url.c_str(), referer.c_str());
   HttpResponse response = http_perform(request);
   if (!response.error.empty() || !response.ok()) {
+    CK_LOGW("download: %s -> status %d, error '%s'", url.c_str(), response.status,
+            response.error.c_str());
     fs::remove_file(target);
     error = response.error.empty() ? format("Download failed (%d).", response.status)
                                    : response.error;
     return false;
   }
   // Anything below a few KB is an error or challenge page, not a book - the
-  // reference downloader rejects the same way rather than saving junk.
-  if (fs::file_size(target) < 10 * 1024) {
+  // reference downloader rejects the same way rather than saving junk. Keep
+  // the little we got so the page the server actually served can be looked at.
+  uint64_t got = fs::file_size(target);
+  if (got < 10 * 1024) {
+    std::string tiny;
+    fs::read_file(target, tiny);
+    fs::write_file_atomic(paths().data + "/last-download.html",
+                          "<!-- download of " + url + " returned " + format("%llu", (unsigned long long)got) +
+                          " bytes, treated as an error page -->\n" + tiny);
     fs::remove_file(target);
-    error = "The server sent an error page instead of the file. Try again, or "
-            "open the book's page in the browser to see what it wants.";
+    CK_LOGW("download: %s returned only %llu bytes (saved last-download.html)", url.c_str(),
+            (unsigned long long)got);
+    error = "The server sent an error page instead of the file (saved to "
+            ".adds/catalogues/last-download.html). Try again, or open the book's page "
+            "in the browser to see what it wants.";
     return false;
   }
   path_out = target;
-  CK_LOGI("search: downloaded %s (%llu bytes)", target.c_str(),
-          (unsigned long long)fs::file_size(target));
+  CK_LOGI("download: saved %s (%llu bytes)", target.c_str(), (unsigned long long)got);
   return true;
 }
 
