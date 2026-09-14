@@ -9,7 +9,8 @@ namespace {
 // that expect a screen to animate. Colour is used sparingly: a Libra Colour
 // shows it, a Clara BW shows grey, and both read fine.
 const char* kStyle = R"(
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:pan-x pan-y;-ms-touch-action:pan-x pan-y}
+*{-webkit-text-size-adjust:100%}
 body{margin:0;background:#fff;color:#000;font-family:Georgia,"Times New Roman",serif;font-size:22px;line-height:1.35}
 a{color:inherit;text-decoration:none}
 .top{display:block;background:#1d4f91;color:#fff;padding:14px 18px;overflow:hidden}
@@ -59,7 +60,8 @@ std::string page(const std::string& title, const std::string& body,
                  const std::string& back_href, const std::string& back_label,
                  const std::string& accent) {
   std::string out = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">\n";
-  out += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
+  out += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, "
+         "maximum-scale=1, minimum-scale=1, user-scalable=no\">\n";
   out += "<title>" + esc(title) + "</title>\n<style>" + std::string(kStyle);
   if (!accent.empty()) out += accent_style(accent);
   out += "</style>\n";
