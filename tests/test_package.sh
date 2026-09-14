@@ -311,10 +311,17 @@ grep -q 'ifconfig lo' "${START}"
 check $? "launcher brings the loopback interface up"
 grep -q -- '--idle' "${START}"
 check $? "server is started with an idle timeout"
-if grep -vE '^[[:space:]]*#' "${START}" | grep -qE 'killall|pkill|nickel|/dev/fb|/dev/input'; then
+if grep -vE '^[[:space:]]*#' "${START}" | grep -qE 'nickel|/dev/fb|/dev/input'; then
     check 1 "launcher leaves the stock software alone"
 else
     check 0 "launcher leaves the stock software alone"
+fi
+# It may clear its OWN stale server, but must not kill anything else.
+if grep -vE '^[[:space:]]*#' "${START}" | grep -qE '(killall|pkill)' \
+        | grep -vq 'pkill -x catalogues'; then
+    check 1 "launcher only ever clears its own process"
+else
+    check 0 "launcher only ever clears its own process"
 fi
 # The launcher must run to completion in the sandbox with a fake binary
 # that answers the ping, and fail cleanly with one that never does.

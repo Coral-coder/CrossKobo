@@ -9,6 +9,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <csignal>
@@ -196,6 +197,13 @@ bool ping(int port) {
   addr.sin_family = AF_INET;
   addr.sin_port = htons((uint16_t)port);
   inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  // Bounded: a wedged server that accepts but never replies must not hang
+  // the ping (and thus the launcher) forever.
+  struct timeval tv;
+  tv.tv_sec = 2;
+  tv.tv_usec = 0;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
   bool ok = connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0;
   if (ok) {
     const char* request = "GET /status HTTP/1.0\r\n\r\n";
