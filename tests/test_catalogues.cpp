@@ -329,8 +329,9 @@ int main() {
   // Shelfmark is a search engine with its own sources file, separate from
   // catalogues.txt. Point it at the fake search-format server.
   fs::write_file_atomic(p.data + "/shelfmark.txt",
-                        "# mine\n"
-                        "My Fic | " + fake_base() + "/search.php?req={searchTerms}\n");
+                        "# mine - a plain base URL, no search.php, no tag: Shelfmark must\n"
+                        "# still treat it as a libgen-style search server, not OPDS.\n"
+                        "My Fic | " + fake_base() + "\n");
   std::string sm = fetch(kAppPort, "GET", "/shelfmark");
   CHECK(has(sm, "HTTP/1.1 200"));
   CHECK(has(sm, "<h1>Shelfmark</h1>"));

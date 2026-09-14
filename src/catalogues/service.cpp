@@ -457,7 +457,21 @@ std::string shelfmark_file_path() { return ck::paths().data + "/shelfmark.txt"; 
 std::vector<Settings::Catalogue> shelfmark_sources() {
   std::string text;
   if (!ck::fs::read_file(shelfmark_file_path(), text)) return {};
-  return ck::parse_catalogue_list(text);
+  std::vector<Settings::Catalogue> src = ck::parse_catalogue_list(text);
+  // Shelfmark is a search engine in the Library-Genesis shape - a web search
+  // that answers with an HTML table or JSON, not an OPDS feed. That is the
+  // whole point of it, so every source here is treated as one, whatever the
+  // address looks like: the reader never has to tag their own server, and a
+  // plain base URL (the code probes search.php / json.php under it) works as
+  // well as a full search URL.
+  for (Settings::Catalogue& c : src) {
+    c.format = "libgen";
+    if (c.url.empty() && !c.search.empty()) {
+      c.url = c.search;
+      c.search.clear();
+    }
+  }
+  return src;
 }
 
 Response sm_page(const std::string& title, const std::string& body,
@@ -498,11 +512,14 @@ std::string shelfmark_setup_note() {
                 "<p><b>No search servers yet.</b></p>"
                 "<p>Shelfmark searches the servers you list in this file on the Kobo's "
                 "drive:</p><pre>" + esc(shown_path(shelfmark_file_path())) + "</pre>"
-                "<p>Plug the Kobo into a computer and add one per line - a search-format "
-                "server (search.php / json.php), or an OPDS server that offers a search:</p>"
-                "<pre>My server | https://fic.example.net/search.php?req={searchTerms}</pre>"
-                "<p>It is Shelfmark's own file. Your OPDS catalogues stay in catalogues.txt "
-                "and are browsed from Catalogues instead.</p>");
+                "<p>Plug the Kobo into a computer and add one per line. It is a "
+                "Library-Genesis-style search server - give its address, either the base "
+                "URL or a full search URL:</p>"
+                "<pre>My server | https://fic.example.net\n"
+                "My server | https://fic.example.net/search.php?req={searchTerms}</pre>"
+                "<p>Every line here is searched as that kind of server; no OPDS, no tags "
+                "needed. It is Shelfmark's own file - your OPDS catalogues stay in "
+                "catalogues.txt and are browsed from Catalogues.</p>");
 }
 
 Response shelfmark_home(const Request& request) {
@@ -712,12 +729,14 @@ void ensure_shelfmark_file() {
       "# One server per line. Use a hostname, not an IP number, so the same line\n"
       "# works at home and away:\n"
       "#\n"
+      "#   Name | https://host\n"
       "#   Name | https://host/search.php?req={searchTerms}\n"
-      "#   Name | https://host/search.php?req={searchTerms} | user | password\n"
+      "#   Name | https://host | user | password\n"
       "#\n"
-      "# A search-format server (search.php / json.php, the libgen search shape)\n"
-      "# is searched in that format; an OPDS server that offers a search works\n"
-      "# too. No servers are shipped - add your own below.\n"
+      "# Every line is searched as a Library-Genesis-style server (an HTML or\n"
+      "# JSON search, not OPDS) - that is what Shelfmark is, so no tag is\n"
+      "# needed. Give the base URL and it probes search.php / json.php under\n"
+      "# it, or give a full search URL. No servers are shipped - add yours.\n"
       "\n";
   if (ck::fs::write_file_atomic(path, kTemplate)) {
     CK_LOGI("wrote %s", path.c_str());
