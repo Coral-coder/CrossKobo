@@ -24,6 +24,26 @@ namespace {
 
 constexpr size_t kMaxInMemoryBody = 16 * 1024 * 1024;
 
+// A normal browser User-Agent. Many library servers (and the CDNs in front
+// of them) hand a placeholder or a block to a bare "curl"/"wget"/"CrossKobo"
+// agent but the real page to a browser, so a request that omits this looks
+// nothing like the one that works when you paste the address into a browser.
+// Sending a plain, honest browser string is what every book-fetching tool
+// does; it is not a header a reader would ever want different.
+constexpr const char* kUserAgent =
+    "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36";
+
+// Does the caller already specify a User-Agent (case-insensitive)?
+bool has_user_agent(const std::map<std::string, std::string>& headers) {
+  for (const auto& kv : headers) {
+    std::string key = kv.first;
+    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    if (key == "user-agent") return true;
+  }
+  return false;
+}
+
 // ------------------------------------------------------------------ socket
 class Socket {
  public:
@@ -231,6 +251,7 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
     // that needs it off is a catalogue worth knowing about.
     std::string bundle = effective_ca_bundle();
     if (!bundle.empty()) cmd += format(" --cacert '%s'", bundle.c_str());
+    if (!has_user_agent(request.headers)) cmd += format(" -A '%s'", kUserAgent);
     for (const auto& kv : request.headers) {
       cmd += format(" -H '%s: %s'", kv.first.c_str(), kv.second.c_str());
     }
@@ -239,8 +260,10 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
     }
     cmd += " '" + url + "'";
   } else {
-    cmd = format("%s -q -T %d -O '%s' '%s' && echo 200 || echo 000", tool.c_str(),
-                 std::max(1, request.timeout_ms / 1000), target.c_str(), url.c_str());
+    std::string ua = has_user_agent(request.headers) ? "" : format(" -U '%s'", kUserAgent);
+    cmd = format("%s -q -T %d%s -O '%s' '%s' && echo 200 || echo 000", tool.c_str(),
+                 std::max(1, request.timeout_ms / 1000), ua.c_str(), target.c_str(),
+                 url.c_str());
   }
   // Keep the fetcher's own diagnosis - the one line that says what actually
   // went wrong - so a failure is not reported as a shrug.
@@ -402,7 +425,7 @@ HttpResponse http_perform(const HttpRequest& request) {
     head += "Host: " + current.url.host;
     if (current.url.port != 80) head += format(":%d", current.url.port);
     head += "\r\n";
-    head += "User-Agent: CrossKobo\r\n";
+    if (!has_user_agent(current.headers)) head += format("User-Agent: %s\r\n", kUserAgent);
     head += "Connection: close\r\n";
     head += "Accept-Encoding: identity\r\n";
     if (!current.url.user.empty()) {
