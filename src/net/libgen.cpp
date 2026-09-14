@@ -1,6 +1,7 @@
 #include "net/libgen.h"
 
 #include <algorithm>
+#include <regex>
 
 #include "core/fs.h"
 #include "core/json.h"
@@ -372,50 +373,33 @@ std::string unescape_href(std::string s) {
 }  // namespace
 
 std::string get_link_from_ads_page(const std::string& html, const std::string& base) {
-  std::string lower = to_lower(html);
-  if (lower.find("get.php") == std::string::npos) return "";
-  std::string best;
-  int best_score = -1;
-  size_t pos = 0;
-  // Walk every href="..." value and keep the get.php link, preferring one
-  // that carries a key= token and whose visible label is GET - that is the
-  // real, keyed download link the ads page puts the file behind.
-  while (true) {
-    size_t at = lower.find("href", pos);
-    if (at == std::string::npos) break;
-    size_t eq = lower.find('=', at);
-    if (eq == std::string::npos) break;
-    size_t q = eq + 1;
-    while (q < html.size() && (html[q] == ' ' || html[q] == '\t')) ++q;
-    if (q >= html.size() || (html[q] != '"' && html[q] != '\'')) {
-      pos = eq + 1;
-      continue;
-    }
-    size_t end = html.find(html[q], q + 1);
-    if (end == std::string::npos) break;
-    std::string href = html.substr(q + 1, end - q - 1);
-    pos = end + 1;
-    std::string hl = to_lower(href);
-    if (hl.find("get.php") == std::string::npos) continue;
-
-    int score = 0;
-    if (hl.find("key=") != std::string::npos) score += 2;
-    // Does the anchor's visible text say GET? (often <h2>GET</h2>)
-    size_t gt = html.find('>', end);
-    if (gt != std::string::npos) {
-      std::string after = to_lower(html.substr(gt, std::min<size_t>(80, html.size() - gt)));
-      if (after.find(">get<") != std::string::npos || after.find("get</") != std::string::npos) {
-        score += 1;
-      }
-    }
-    if (score > best_score) {
-      std::string url = unescape_href(href);
+  // The exact scrape the reference downloader does: if the page mentions
+  // get.php, try these patterns in order and take the first match - the
+  // keyed GET link behind the <h2>GET</h2> button, then looser fallbacks.
+  if (to_lower(html).find("get.php") == std::string::npos) return "";
+  static const std::regex kPatterns[] = {
+      // 1: <a href="...get.php?md5=...&key=..."> <h2>GET</h2> </a>
+      std::regex(R"(<a\s+href=["']([^"']*get\.php\?md5=[^"']+&(?:amp;)?key=[^"']+)["'][^>]*>\s*<h2[^>]*>GET</h2>\s*</a>)",
+                 std::regex::icase),
+      // 2: any <a href="...get.php?md5=...&[amp;]key=...">
+      std::regex(R"(<a[^>]+href=["']([^"']*get\.php\?md5=[^"']+&(?:amp;)?key=[^"']+)["'])",
+                 std::regex::icase),
+      // 3: <a href="...get.php..."> ...anything... <h2>GET</h2>
+      std::regex(R"(<a\s+href=["']([^"']*get\.php[^"']*)["'][^>]*>[\s\S]*?<h2[^>]*>GET</h2>)",
+                 std::regex::icase),
+      // 4: href="...get.php?...md5=...&...key=..."
+      std::regex(R"(href=["']([^"']*get\.php\?[^"']*md5=[^"']*&[^"']*key=[^"']+)["'])",
+                 std::regex::icase),
+  };
+  for (const std::regex& re : kPatterns) {
+    std::smatch match;
+    if (std::regex_search(html, match, re)) {
+      std::string url = unescape_href(match[1].str());
       if (url.rfind("http", 0) != 0) url = resolve_url(base + "/", url);
-      best = url;
-      best_score = score;
+      return url;
     }
   }
-  return best;
+  return "";
 }
 
 std::string direct_link_from_page(const std::string& html, const std::string& base) {
