@@ -1,11 +1,13 @@
 #include "catalogues/service.h"
 
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstring>
 #include <vector>
 
 #include "app/catalogue_file.h"
@@ -126,6 +128,46 @@ std::string shown_path(const std::string& path) {
     return path.substr(onboard.size() + 1);
   }
   return path;
+}
+
+// Ask Nickel to import newly downloaded books, so they show up in the
+// library without the reader tapping Sync. Nickel imports whatever is new
+// when a USB connection ends, so we replay that plug/unplug on the pipe it
+// watches - the same mechanism the stock software and NickelMenu use. It
+// runs in a detached child after a short pause, so the "Downloaded" page
+// reaches the browser first. Best-effort: does nothing when the pipe is not
+// there (not a Kobo, or Nickel not running).
+const char* kNickelStatus = "/tmp/nickel-hardware-status";
+
+bool library_import_available() { return ck::fs::exists(kNickelStatus); }
+
+void trigger_library_import() {
+  if (!library_import_available()) return;
+  pid_t pid = fork();
+  if (pid != 0) return;                 // the handler carries on and answers the browser
+  setsid();                             // detach from this connection
+  usleep(2500 * 1000);                  // let the Downloaded page render first
+  int fd = open(kNickelStatus, O_WRONLY | O_NONBLOCK);
+  if (fd >= 0) {
+    auto put = [&](const char* s) { ssize_t n = write(fd, s, strlen(s)); (void)n; };
+    put("usb plug add\n");
+    usleep(1500 * 1000);
+    put("usb plug remove\n");
+    close(fd);
+  }
+  _exit(0);
+}
+
+// The line shown after a download, worded for whether the import will happen
+// on its own or the reader still has to Sync.
+std::string import_note() {
+  if (library_import_available()) {
+    return notice("note", "<p>Importing it into your library now - it will appear on your "
+                          "home screen in a moment. The Kobo may flash its USB screen as it "
+                          "imports; that is normal.</p>");
+  }
+  return notice("note", "<p>To see it in your library: close this window and tap <b>Sync</b>, "
+                        "or <b>Catalogues - add downloads to library</b> in the menu.</p>");
 }
 
 // ------------------------------------------------------------------- pages
@@ -368,11 +410,11 @@ Response download(const Request& request, size_t id, const Settings::Catalogue& 
     return error_page(502, "Not downloaded", err, back);
   }
   CK_LOGI("downloaded %s", path.c_str());
+  trigger_library_import();
   std::string body = notice("good", "<p><b>" + esc(request.param("title")) +
                                         "</b> is on this Kobo, as<br>" + esc(shown_path(path)) +
                                         "</p>");
-  body += notice("note", "<p>To see it in your library: close this window and tap <b>Sync</b>, "
-                         "or <b>Catalogues - add downloads to library</b> in the menu.</p>");
+  body += import_note();
   body += button_link(back, "More books", true);
   body += button_link("/downloads", "Downloaded books", true);
   return html(page("Downloaded", body, back));
@@ -498,7 +540,8 @@ std::string sm_libgen_row(size_t s, const std::string& label, const ck::SearchRe
   if (!r.year.empty()) meta += (meta.empty() ? "" : " · ") + r.year;
   if (!r.size_text.empty()) meta += (meta.empty() ? "" : " · ") + r.size_text;
   if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
-  return row(href, r.title.empty() ? "Untitled" : r.title, meta, ck::to_upper(r.extension));
+  return row(href, r.title.empty() ? "Untitled" : r.title, meta, ck::to_upper(r.extension),
+             r.cover_url);
 }
 
 std::string sm_opds_row(size_t s, const std::string& label, const ck::OpdsEntry& e,
@@ -611,7 +654,7 @@ Response shelfmark_search(const Request& request) {
                              "</b> on the Kobo's drive.</p>");
     }
   }
-  body += rows;
+  if (!rows.empty()) body += "<div class=\"grid\">" + rows + "</div>";
   if (!trouble.empty()) body += notice("bad", trouble);
   return sm_page("Shelfmark", body, "/shelfmark", "Shelfmark");
 }
@@ -688,11 +731,11 @@ Response shelfmark_download(const Request& request) {
                       kShelfmarkAccent);
   }
   CK_LOGI("shelfmark downloaded %s", path.c_str());
+  trigger_library_import();
   std::string body = notice("good", "<p><b>" + esc(request.param("title")) +
                                         "</b> is on this Kobo, as<br>" + esc(shown_path(path)) +
                                         "</p>");
-  body += notice("note", "<p>To see it in your library: close this window and tap <b>Sync</b> on "
-                         "the home screen.</p>");
+  body += import_note();
   body += button_link(back, "More results", true);
   return sm_page("Downloaded", body, back, "Back");
 }

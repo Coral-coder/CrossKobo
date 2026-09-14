@@ -195,6 +195,7 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
   std::string cell_text;
   std::string link_text;
   std::string link_href;
+  std::string row_cover;   // the first <img> in the row: a cover thumbnail
   bool in_row = false;
   bool in_cell = false;
   bool in_link = false;
@@ -263,11 +264,13 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
             break;
           }
         }
+        result.cover_url = trim(row_cover);
         out.push_back(result);
       }
     }
     cells.clear();
     links.clear();
+    row_cover.clear();
     in_link = false;
   };
 
@@ -292,6 +295,8 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
         link_href = parser.attr("href");
         link_text.clear();
         in_link = !link_href.empty();
+      } else if (tag == "img" && in_row && row_cover.empty()) {
+        row_cover = parser.attr("src");
       }
       continue;
     }
@@ -346,6 +351,71 @@ bool parse_libgen_json(const std::string& text, std::vector<SearchResult>& out) 
     out.push_back(result);
   }
   return true;
+}
+
+namespace {
+// Unescape the HTML entities that turn up inside an href, the way the
+// reference downloader does: &amp; &gt; &lt;.
+std::string unescape_href(std::string s) {
+  auto replace_all_of = [&](const std::string& from, const std::string& to) {
+    size_t at = 0;
+    while ((at = s.find(from, at)) != std::string::npos) {
+      s.replace(at, from.size(), to);
+      at += to.size();
+    }
+  };
+  replace_all_of("&amp;", "&");
+  replace_all_of("&gt;", ">");
+  replace_all_of("&lt;", "<");
+  return s;
+}
+}  // namespace
+
+std::string get_link_from_ads_page(const std::string& html, const std::string& base) {
+  std::string lower = to_lower(html);
+  if (lower.find("get.php") == std::string::npos) return "";
+  std::string best;
+  int best_score = -1;
+  size_t pos = 0;
+  // Walk every href="..." value and keep the get.php link, preferring one
+  // that carries a key= token and whose visible label is GET - that is the
+  // real, keyed download link the ads page puts the file behind.
+  while (true) {
+    size_t at = lower.find("href", pos);
+    if (at == std::string::npos) break;
+    size_t eq = lower.find('=', at);
+    if (eq == std::string::npos) break;
+    size_t q = eq + 1;
+    while (q < html.size() && (html[q] == ' ' || html[q] == '\t')) ++q;
+    if (q >= html.size() || (html[q] != '"' && html[q] != '\'')) {
+      pos = eq + 1;
+      continue;
+    }
+    size_t end = html.find(html[q], q + 1);
+    if (end == std::string::npos) break;
+    std::string href = html.substr(q + 1, end - q - 1);
+    pos = end + 1;
+    std::string hl = to_lower(href);
+    if (hl.find("get.php") == std::string::npos) continue;
+
+    int score = 0;
+    if (hl.find("key=") != std::string::npos) score += 2;
+    // Does the anchor's visible text say GET? (often <h2>GET</h2>)
+    size_t gt = html.find('>', end);
+    if (gt != std::string::npos) {
+      std::string after = to_lower(html.substr(gt, std::min<size_t>(80, html.size() - gt)));
+      if (after.find(">get<") != std::string::npos || after.find("get</") != std::string::npos) {
+        score += 1;
+      }
+    }
+    if (score > best_score) {
+      std::string url = unescape_href(href);
+      if (url.rfind("http", 0) != 0) url = resolve_url(base + "/", url);
+      best = url;
+      best_score = score;
+    }
+  }
+  return best;
 }
 
 std::string direct_link_from_page(const std::string& html, const std::string& base) {
@@ -435,7 +505,9 @@ bool libgen_search(const std::string& base_address, const std::string& query,
       "&res=100&filesuns=all";
   auto add_probes = [&](const std::string& q_or_empty) {
     std::string q = q_or_empty;                  // the param the user named, if any
-    // libgen.li first - the full request, which is what most clones are.
+    // The reference downloader's exact form first: index.php?req=...&res=N.
+    candidates.push_back(endpoint.base + "/index.php?req=" + encoded + "&res=100");
+    // Then the full-keys request, for clones that demand the column set.
     candidates.push_back(endpoint.base + "/index.php?req=" + encoded + li_keys);
     if (!q.empty()) {
       // We know the parameter name (e.g. "req="), just not the page. Try it
@@ -522,6 +594,14 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     }
     parse_libgen_html(body, results);
     if (!results.empty()) {
+      // Cover thumbnails come through relative; make them absolute against
+      // the server so the Kobo's browser can load them.
+      for (SearchResult& r : results) {
+        if (!r.cover_url.empty() && r.cover_url.rfind("http", 0) != 0 &&
+            r.cover_url.rfind("data:", 0) != 0) {
+          r.cover_url = resolve_url(endpoint.base + "/", r.cover_url);
+        }
+      }
       CK_LOGI("search: %s -> %zu results (html)", url.c_str(), results.size());
       return true;
     }
@@ -549,7 +629,9 @@ bool libgen_search(const std::string& base_address, const std::string& query,
 }
 
 bool libgen_resolve_download(const std::string& base_address, const SearchResult& result,
-                             std::string& url_out, std::string& error) {
+                             std::string& url_out, std::string& referer_out,
+                             std::string& error) {
+  referer_out.clear();
   if (!result.direct_url.empty()) {
     url_out = result.direct_url;
     return true;
@@ -559,34 +641,35 @@ bool libgen_resolve_download(const std::string& base_address, const SearchResult
     error = "Nothing to download: the server gave neither a link nor a file id.";
     return false;
   }
-  // The file first, then the pages that link to it.
-  std::vector<std::string> direct = {
-      endpoint.base + "/get.php?md5=" + result.md5,
-      endpoint.base + "/get/" + result.md5,
-  };
-  for (const std::string& url : direct) {
-    HttpRequest request;
-    if (!Url::parse(url, request.url)) continue;
-    request.method = "HEAD";
-    request.timeout_ms = 10000;
-    HttpResponse response = http_perform(request);
-    if (response.ok()) {
-      url_out = url;
+  // The reference downloader's path: the ads.php page for the md5 carries a
+  // keyed get.php link (the key is a per-page token, not derivable), and the
+  // file GET must be sent with that ads page as its Referer. Do exactly that.
+  std::string ads = endpoint.base + "/ads.php?md5=" + result.md5;
+  HttpResponse ads_page = http_get(ads, 15000);
+  if (ads_page.ok() && !ads_page.body.empty()) {
+    std::string link = get_link_from_ads_page(ads_page.body, endpoint.base);
+    if (!link.empty()) {
+      url_out = link;
+      referer_out = ads;
       return true;
     }
   }
+  // Fallbacks for forks that are not libgen.li: other pages that link to the
+  // file, scraped the same way, then any file-looking link on them.
   std::vector<std::string> pages = {
-      endpoint.base + "/fiction/" + result.md5,
-      endpoint.base + "/main/" + result.md5,
+      endpoint.base + "/index.php?md5=" + result.md5,
       endpoint.base + "/file.php?md5=" + result.md5,
-      endpoint.base + "/ads.php?md5=" + result.md5,
+      endpoint.base + "/main/" + result.md5,
+      endpoint.base + "/fiction/" + result.md5,
   };
   for (const std::string& url : pages) {
     HttpResponse response = http_get(url, 15000);
     if (!response.ok() || response.body.empty()) continue;
-    std::string link = direct_link_from_page(response.body, endpoint.base);
+    std::string link = get_link_from_ads_page(response.body, endpoint.base);
+    if (link.empty()) link = direct_link_from_page(response.body, endpoint.base);
     if (!link.empty()) {
       url_out = link;
+      referer_out = url;
       return true;
     }
   }
@@ -599,7 +682,8 @@ bool libgen_download(const std::string& base, const SearchResult& result,
                      const std::string& password, std::string& path_out,
                      std::string& error) {
   std::string url;
-  if (!libgen_resolve_download(base, result, url, error)) return false;
+  std::string referer;
+  if (!libgen_resolve_download(base, result, url, referer, error)) return false;
 
   fs::mkdir_p(dir);
   std::string target = dir + "/" + result.filename();
@@ -623,6 +707,9 @@ bool libgen_download(const std::string& base, const SearchResult& result,
   }
   request.download_path = target;
   request.timeout_ms = 180000;
+  // The file GET goes with the ads page as its Referer, the way the server
+  // expects, or it hands back an error page instead of the book.
+  if (!referer.empty()) request.headers["Referer"] = referer;
   if (!user.empty()) {
     request.headers["Authorization"] = "Basic " + base64_encode(user + ":" + password);
   }
@@ -633,9 +720,12 @@ bool libgen_download(const std::string& base, const SearchResult& result,
                                    : response.error;
     return false;
   }
-  if (fs::file_size(target) == 0) {
+  // Anything below a few KB is an error or challenge page, not a book - the
+  // reference downloader rejects the same way rather than saving junk.
+  if (fs::file_size(target) < 10 * 1024) {
     fs::remove_file(target);
-    error = "The server sent an empty file.";
+    error = "The server sent an error page instead of the file. Try again, or "
+            "open the book's page in the browser to see what it wants.";
     return false;
   }
   path_out = target;

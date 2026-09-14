@@ -21,6 +21,7 @@ struct SearchResult {
   std::string year;
   std::string md5;
   std::string direct_url;  // set when the answer gave one outright
+  std::string cover_url;   // a thumbnail, when the row carried one
 
   // A filename for the download, built from what the server said.
   std::string filename() const;
@@ -36,7 +37,8 @@ bool libgen_search(const std::string& base, const std::string& query,
 // mirror pages these servers use when the search answer did not include
 // one.
 bool libgen_resolve_download(const std::string& base, const SearchResult& result,
-                             std::string& url_out, std::string& error);
+                             std::string& url_out, std::string& referer_out,
+                             std::string& error);
 
 // Downloads a result into `dir`, never overwriting. Returns the path.
 bool libgen_download(const std::string& base, const SearchResult& result,
@@ -55,6 +57,9 @@ bool parse_libgen_json(const std::string& text, std::vector<SearchResult>& out);
 std::string md5_from_link(const std::string& href);
 // Picks the file link out of a mirror page.
 std::string direct_link_from_page(const std::string& html, const std::string& base);
+// Scrapes the keyed "get.php?md5=...&key=..." download link out of an
+// ads.php page, the way the reference downloader does. Empty if none.
+std::string get_link_from_ads_page(const std::string& html, const std::string& base);
 // True when the address looks like one of these search endpoints.
 bool looks_like_libgen_endpoint(const std::string& url);
 

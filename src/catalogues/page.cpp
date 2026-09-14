@@ -22,6 +22,12 @@ a{color:inherit;text-decoration:none}
 .row .m{display:block;font-size:18px;color:#444;margin-top:4px}
 .row .g{float:right;margin-left:12px;font-size:16px;padding:4px 10px;border:2px solid #1d4f91;border-radius:6px;color:#1d4f91;font-family:Helvetica,Arial,sans-serif}
 .row img{float:left;width:64px;margin:0 14px 4px 0;border:1px solid #ccc;background:#eee}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin:14px 0}
+.grid .row{border:2px solid #ddd;border-bottom:2px solid #ddd;border-radius:10px;padding:12px 10px;text-align:center}
+.grid .row img{float:none;display:block;width:auto;max-width:120px;max-height:180px;margin:0 auto 10px;border:1px solid #ccc;background:#eee}
+.grid .row .t{font-size:19px;line-height:1.25}
+.grid .row .m{font-size:15px}
+.grid .row .g{float:none;display:inline-block;margin:8px 0 0}
 .row.nav .t{color:#1d4f91}
 .row.nav .t:before{content:"\25B8 ";color:#1d4f91}
 form.search{margin:12px 0 18px;overflow:hidden}

@@ -118,9 +118,18 @@ Response fake_server(const Request& request) {
         "</table></body></html>";
     return r;
   }
+  if (p == "/ads.php") {
+    // The book page, carrying the keyed GET link the downloader must scrape.
+    std::string md5 = request.param("md5");
+    r.body = "<html><body><p>libgen ads</p>"
+             "<a href=\"/get.php?md5=" + md5 + "&amp;key=TESTKEY\"><h2>GET</h2></a>"
+             "</body></html>";
+    return r;
+  }
   if (p == "/get.php") {
     r.content_type = "application/epub+zip";
-    r.body = kEpubBytes;
+    // Over the 10 KiB floor the downloader uses to reject error pages.
+    r.body = std::string("PK\x03\x04", 4) + std::string(11000, 'x');
     return r;
   }
   r.status = 404;
@@ -450,6 +459,18 @@ int main() {
       CHECK(res[0].extension == "pdf");
       CHECK(res[0].year == "2019");
     }
+  }
+
+  // ------------------------------------------- ads.php keyed GET link scrape
+  // The download link on the book page carries a per-page key and is entity-
+  // encoded; it must be unescaped and made absolute.
+  {
+    std::string ads = "<html><body><p>ad</p>"
+                      "<a href='/get.php?md5=abcabcabcabcabcabcabcabcabcabc12&amp;key=SECRET'>"
+                      "<h2>GET</h2></a></body></html>";
+    std::string link = ck::get_link_from_ads_page(ads, "https://lib.example");
+    CHECK(link == "https://lib.example/get.php?md5=abcabcabcabcabcabcabcabcabcabc12&key=SECRET");
+    CHECK(ck::get_link_from_ads_page("<html>no link here</html>", "https://lib.example").empty());
   }
 
   stop = true;

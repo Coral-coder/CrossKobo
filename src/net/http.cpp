@@ -31,8 +31,8 @@ constexpr size_t kMaxInMemoryBody = 16 * 1024 * 1024;
 // Sending a plain, honest browser string is what every book-fetching tool
 // does; it is not a header a reader would ever want different.
 constexpr const char* kUserAgent =
-    "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/129.0.0.0 Safari/537.36";
 
 // Does the caller already specify a User-Agent (case-insensitive)?
 bool has_user_agent(const std::map<std::string, std::string>& headers) {
@@ -252,6 +252,7 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
     std::string bundle = effective_ca_bundle();
     if (!bundle.empty()) cmd += format(" --cacert '%s'", bundle.c_str());
     if (!has_user_agent(request.headers)) cmd += format(" -A '%s'", kUserAgent);
+    cmd += " -H 'Accept-Language: en-US,en;q=0.5' -H 'Upgrade-Insecure-Requests: 1'";
     for (const auto& kv : request.headers) {
       cmd += format(" -H '%s: %s'", kv.first.c_str(), kv.second.c_str());
     }
@@ -426,6 +427,8 @@ HttpResponse http_perform(const HttpRequest& request) {
     if (current.url.port != 80) head += format(":%d", current.url.port);
     head += "\r\n";
     if (!has_user_agent(current.headers)) head += format("User-Agent: %s\r\n", kUserAgent);
+    head += "Accept-Language: en-US,en;q=0.5\r\n";
+    head += "Upgrade-Insecure-Requests: 1\r\n";
     head += "Connection: close\r\n";
     head += "Accept-Encoding: identity\r\n";
     if (!current.url.user.empty()) {
