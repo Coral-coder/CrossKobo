@@ -147,16 +147,22 @@ Response home(const Request& request) {
                                "</b> yet. Add a line for it to the catalogue file - see "
                                "<a href=\"/help\"><u>How this works</u></a>.</p>");
   }
-  if (list.empty()) {
-    body += notice("note", "<p>No catalogues yet. Put one per line in <b>" +
-                               esc(shown_path(ck::catalogue_file_path())) +
-                               "</b> on the Kobo's drive.</p>");
-  }
+  // The main screen is for catalogues you browse. Search services live in
+  // Shelfmark, its own screen, and are not listed here.
+  size_t shown = 0;
   for (size_t i = 0; i < list.size(); ++i) {
     const Settings::Catalogue& c = list[i];
+    if (kind_of(c) == "search") continue;
     std::string meta = c.search_address();
     if (meta.size() > 60) meta = meta.substr(0, 58) + "…";
     body += row(catalogue_path(i), c.name, meta, kind_of(c));
+    ++shown;
+  }
+  if (shown == 0) {
+    body += notice("note", "<p>No catalogues to browse yet. Put one per line in <b>" +
+                               esc(shown_path(ck::catalogue_file_path())) +
+                               "</b> on the Kobo's drive. (Search servers go in "
+                               "Shelfmark's own file and appear there, not here.)</p>");
   }
   body += "<h2>Downloads</h2>";
   body += row("/downloads", "Downloaded books", "What has been saved to the Downloads folder",

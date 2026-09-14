@@ -210,10 +210,10 @@ int main() {
                         "Fic | " + fake_base() + "/search.php?req={searchTerms}\n");
   home = fetch(kAppPort, "GET", "/");
   CHECK(has(home, "Fake Library"));
-  CHECK(has(home, "href=\"/c/0\""));
-  CHECK(has(home, "href=\"/c/1\""));
+  CHECK(has(home, "href=\"/c/0\""));                     // the browsable one is listed
+  CHECK(!has(home, "href=\"/c/1\""));                    // the search-only one is NOT on the main screen
   CHECK(!has(home, "Gutenberg"));
-  CHECK(has(home, "<span class=\"g\">search</span>"));   // the search-only one is marked
+  CHECK(!has(home, "<span class=\"g\">search</span>"));  // search services live in Shelfmark, not here
 
   // The menu entry that jumps to a named catalogue.
   std::string jump = fetch(kAppPort, "GET", "/?open=fake%20library");
