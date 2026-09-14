@@ -89,7 +89,23 @@ Response fake_server(const Request& request) {
     r.body = kEpubBytes;
     return r;
   }
-  if (p == "/search.php") {
+  if (p == "/find" || p == "/search.php") {
+    std::string term = request.param("req");
+    if (term.empty()) term = request.param("q");
+    if (term.empty()) term = request.param("query");
+    r.body =
+        "<html><body><table><tr><td>ID</td><td>Author(s)</td><td>Title</td><td>Publisher</td>"
+        "<td>Year</td><td>Pages</td><td>Language</td><td>Size</td><td>Extension</td>"
+        "<td>Mirrors</td></tr>"
+        "<tr><td>1</td><td>A. Writer</td><td><a href=\"book/index.php?md5="
+        "0123456789abcdef0123456789abcdef\">Fic about " + catalogues::html_escape(term) +
+        "</a></td><td>-</td><td>2020</td>"
+        "<td>10</td><td>English</td><td>12 Kb</td><td>epub</td>"
+        "<td><a href=\"/get.php?md5=0123456789abcdef0123456789abcdef\">[1]</a></td></tr>"
+        "</table></body></html>";
+    return r;
+  }
+  if (p == "/search.php.disabled") {
     r.body =
         "<html><body><table><tr><td>ID</td><td>Author(s)</td><td>Title</td><td>Publisher</td>"
         "<td>Year</td><td>Pages</td><td>Language</td><td>Size</td><td>Extension</td>"
@@ -364,6 +380,15 @@ int main() {
     fs::read_file(p.data + "/catalogues.txt", cats);
     CHECK(!has(cats, "My Fic"));
   }
+  // An exact, non-.php search route with a placeholder must be hit verbatim,
+  // not thrown away in favour of probing /search.php etc.
+  fs::write_file_atomic(p.data + "/shelfmark.txt",
+                        "Exact | " + fake_base() + "/find?q={searchTerms}\n");
+  std::string smx = fetch(kAppPort, "GET", "/shelfmark/search?q=dragons");
+  CHECK(has(smx, "HTTP/1.1 200"));
+  CHECK(has(smx, "Fic about dragons"));
+  CHECK(has(smx, "/shelfmark/book?s=0"));
+
   // With no shelfmark.txt, Shelfmark says how to set up its own file.
   fs::remove_file(p.data + "/shelfmark.txt");
   std::string sm_empty = fetch(kAppPort, "GET", "/shelfmark");
