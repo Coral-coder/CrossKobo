@@ -83,6 +83,13 @@ Endpoint split_endpoint(const std::string& address) {
   Endpoint out;
   Url url;
   if (!Url::parse(address, url)) return out;
+  // "https://host?req=..." with no slash before the query leaves the query
+  // stuck on the host; peel it back off so the host stays a host.
+  size_t q = url.host.find('?');
+  if (q != std::string::npos) {
+    if (url.query.empty()) url.query = url.host.substr(q + 1);
+    url.host = url.host.substr(0, q);
+  }
   out.base = url.scheme + "://" + url.host;
   if (url.port > 0 && !((url.scheme == "http" && url.port == 80) ||
                         (url.scheme == "https" && url.port == 443))) {
@@ -392,39 +399,37 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     return false;
   }
   std::string encoded = url_encode(query);
-
-  // What to ask. If the address you gave already names a search route -
-  // any path, any query, with or without a {searchTerms} placeholder - that
-  // is THE address, used exactly as given. No assumptions, no probing:
-  // whatever your server answers there is parsed as JSON or as an HTML
-  // table. Only a bare host with nothing after it makes us fall back to
-  // probing the endpoints Library-Genesis forks conventionally use.
   std::vector<std::string> candidates;
-  bool gave_route = !endpoint.path.empty() || !endpoint.query.empty();
-  if (gave_route) {
-    std::string url = endpoint.base + (endpoint.path.empty() ? "/" : endpoint.path);
-    if (!endpoint.query.empty()) {
-      std::string filled = fill_placeholder(endpoint.query, encoded);
-      if (filled != endpoint.query) {
-        url += "?" + filled;                         // had a placeholder
-      } else if (!endpoint.query.empty() && endpoint.query.back() == '=') {
-        url += "?" + endpoint.query + encoded;        // "...?req=" -> append term
-      } else {
-        url += "?" + endpoint.query + "&q=" + encoded;
-      }
-    } else {
-      // A path but no query: libgen fiction uses q, the rest use req.
-      url += (endpoint.path.find("/fiction") != std::string::npos ? "?q=" : "?req=") + encoded;
+
+  // What to ask. If the address you gave already names a search page - a real
+  // path like /index.php - that page is used as THE address. If it names only
+  // a host, or a host with a bare "?req=" query and no page, we probe the
+  // pages Library-Genesis forks conventionally search at, because "/" itself
+  // is only ever a front page, never search.
+  //
+  // Turn the query the address carried (with or without a {searchTerms}
+  // placeholder, or a bare trailing "req=") into a finished query string.
+  auto build_query = [&](const std::string& q) -> std::string {
+    std::string filled = fill_placeholder(q, encoded);
+    if (filled != q) return filled;              // had a placeholder
+    if (!q.empty() && q.back() == '=') return q + encoded;  // "...?req=" -> append
+    return q + "&q=" + encoded;
+  };
+  // The pages Library-Genesis forks and front-ends put search behind, most-
+  // likely first. A fiction server (a fanfic fork is one) searches at
+  // /fiction/?q=; the classic non-fiction table is /search.php?req=; newer
+  // forks /index.php?req=; Anna's-Archive-style front-ends
+  // /search?...&q=&display=table; some expose a JSON API at /json.php.
+  auto add_probes = [&](const std::string& q_or_empty) {
+    std::string q = q_or_empty;                  // the param the user named, if any
+    if (!q.empty()) {
+      // We know the parameter name (e.g. "req="), just not the page. Try it
+      // on each real search page before giving up.
+      std::string qs = build_query(q);
+      candidates.push_back(endpoint.base + "/index.php?" + qs);
+      candidates.push_back(endpoint.base + "/search.php?" + qs);
+      candidates.push_back(endpoint.base + "/fiction/?" + qs);
     }
-    candidates.push_back(url);
-  } else {
-    // A bare host: probe the routes real forks and front-ends answer, most-
-    // likely first, and keep the first that returns rows - so pointing at
-    // just the server, the way calibrain/shelfmark does, works. A fiction
-    // server (a fanfic fork is one) searches at /fiction/?q=; the classic
-    // non-fiction table is /search.php?req=; newer forks /index.php?req=;
-    // Anna's-Archive-style front-ends /search?...&q=&display=table; some
-    // expose a JSON API at /json.php.
     candidates.push_back(endpoint.base + "/fiction/?q=" + encoded);
     candidates.push_back(endpoint.base + "/search.php?req=" + encoded + "&column=def");
     candidates.push_back(endpoint.base + "/search.php?req=" + encoded);
@@ -435,6 +440,26 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     candidates.push_back(endpoint.base + "/search?req=" + encoded);
     candidates.push_back(endpoint.base +
                          "/json.php?object=e&addkeys=*&fields=*&req=" + encoded);
+  };
+
+  if (!endpoint.path.empty()) {
+    // A real path was given (e.g. /index.php): use it exactly as THE address.
+    std::string url = endpoint.base + endpoint.path;
+    if (!endpoint.query.empty()) {
+      url += "?" + build_query(endpoint.query);
+    } else {
+      url += (endpoint.path.find("/fiction") != std::string::npos ? "?q=" : "?req=") + encoded;
+    }
+    candidates.push_back(url);
+    // If that exact page turns up nothing, still try the conventional pages
+    // on the same host - the path may have been the home page, not search.
+    add_probes(endpoint.query);
+  } else {
+    // No path, only a host (with or without a "?req=" style query). Probe the
+    // conventional pages so pointing at just the server, the way
+    // calibrain/shelfmark does, works - hitting "/" itself would only ever
+    // reach the front page, never search.
+    add_probes(endpoint.query);
   }
 
   std::string last_error;

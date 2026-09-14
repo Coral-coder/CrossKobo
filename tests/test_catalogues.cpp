@@ -389,6 +389,16 @@ int main() {
   CHECK(has(smx, "Fic about dragons"));
   CHECK(has(smx, "/shelfmark/book?s=0"));
 
+  // A host with only a "?req=" query and no path (the "/index.php" left off)
+  // must NOT be sent to "/" - which only ever reaches a front page - but
+  // probe the real search pages, so the search still finds books.
+  fs::write_file_atomic(p.data + "/shelfmark.txt",
+                        "NoPath | " + fake_base() + "/?req={searchTerms}\n");
+  std::string smnp = fetch(kAppPort, "GET", "/shelfmark/search?q=dragons");
+  CHECK(has(smnp, "HTTP/1.1 200"));
+  CHECK(has(smnp, "Fic about dragons"));
+  CHECK(has(smnp, "/shelfmark/book?s=0"));
+
   // With no shelfmark.txt, Shelfmark says how to set up its own file.
   fs::remove_file(p.data + "/shelfmark.txt");
   std::string sm_empty = fetch(kAppPort, "GET", "/shelfmark");
