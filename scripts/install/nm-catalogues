@@ -11,11 +11,11 @@
 
 menu_item :main :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
   chain_success :nickel_browser :modal:http://127.0.0.1:6420/
-  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.
+  chain_failure :cmd_output :3000:/usr/local/catalogues/start.sh --why
 
 menu_item :main :Shelfmark :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
   chain_success :nickel_browser :modal:http://127.0.0.1:6420/?open=Shelfmark
-  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.
+  chain_failure :cmd_output :3000:/usr/local/catalogues/start.sh --why
 
 # Downloads land in the Downloads folder on the drive. The Kobo notices them
 # when it next looks; this asks it to look now.
@@ -23,4 +23,4 @@ menu_item :main :Catalogues - add downloads to library :nickel_misc :rescan_book
 
 menu_item :library :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
   chain_success :nickel_browser :modal:http://127.0.0.1:6420/
-  chain_failure :dbg_msg :Catalogues did not start. See .adds/catalogues/catalogues.log on the drive.
+  chain_failure :cmd_output :3000:/usr/local/catalogues/start.sh --why

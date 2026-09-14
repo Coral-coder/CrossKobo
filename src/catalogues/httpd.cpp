@@ -3,9 +3,11 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -202,6 +204,47 @@ bool ping(int port) {
   }
   close(fd);
   return ok;
+}
+
+bool ensure_loopback() {
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) return false;
+  struct ifreq ifr;
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
+
+  bool has_address = false;
+  if (ioctl(fd, SIOCGIFADDR, &ifr) == 0) {
+    struct sockaddr_in* sin = (struct sockaddr_in*)&ifr.ifr_addr;
+    has_address = sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+  }
+  if (!has_address) {
+    struct sockaddr_in* sin = (struct sockaddr_in*)&ifr.ifr_addr;
+    memset(sin, 0, sizeof(*sin));
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (ioctl(fd, SIOCSIFADDR, &ifr) != 0) {
+      CK_LOGE("httpd: cannot give lo an address: %s", strerror(errno));
+      close(fd);
+      return false;
+    }
+    sin->sin_addr.s_addr = htonl(0xFF000000u);
+    ioctl(fd, SIOCSIFNETMASK, &ifr);
+    CK_LOGI("httpd: gave lo 127.0.0.1");
+  }
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
+  if (ioctl(fd, SIOCGIFFLAGS, &ifr) == 0 && !(ifr.ifr_flags & IFF_UP)) {
+    ifr.ifr_flags |= IFF_UP | IFF_RUNNING;
+    if (ioctl(fd, SIOCSIFFLAGS, &ifr) != 0) {
+      CK_LOGE("httpd: cannot bring lo up: %s", strerror(errno));
+      close(fd);
+      return false;
+    }
+    CK_LOGI("httpd: brought lo up");
+  }
+  close(fd);
+  return true;
 }
 
 bool serve(const std::string& bind_address, int port, const Handler& handler,

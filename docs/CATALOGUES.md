@@ -121,7 +121,15 @@ searches go through the same OPDS and search-format clients as CrossKobo;
 downloads are written by the server into `Downloads`, never by the
 browser.
 
-The log is `.adds/catalogues/catalogues.log` on the drive.
+The Kobo leaves its loopback interface unconfigured until Wi-Fi is turned
+on, so the server gives `lo` its address and brings it up itself before
+listening; the launcher does the same with `ifconfig`, in case.
+
+The log is `.adds/catalogues/catalogues.log` on the drive. It is opened
+and closed for every line, so the running server never holds a file open
+on the drive - plugging the Kobo into a computer works with it running. If
+a menu entry says the server did not start, the message shows the end of
+this log.
 
 ## Remove
 

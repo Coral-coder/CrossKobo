@@ -41,6 +41,12 @@ bool serve(const std::string& bind_address, int port, const Handler& handler,
 // True when something answers on `port` of the loopback address.
 bool ping(int port);
 
+// Makes sure the loopback interface carries 127.0.0.1 and is up. The Kobo
+// leaves it unconfigured until its Wi-Fi scripts run, and binding to an
+// address the kernel does not have fails outright. Needs root, which the
+// stock software's menu gives us. Returns false if it could not be done.
+bool ensure_loopback();
+
 // Helpers shared with the page.
 std::string json_escape(const std::string& text);
 std::string html_escape(const std::string& text);

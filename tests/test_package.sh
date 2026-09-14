@@ -285,8 +285,12 @@ fi
 START="${WORK}/catroot/usr/local/catalogues/start.sh"
 grep -q -- '--ping' "${START}"
 check $? "launcher checks whether the server is already up"
-grep -q 'setsid' "${START}"
-check $? "launcher detaches the server from the menu"
+grep -q -- '--daemon' "${START}"
+check $? "launcher starts the server detached"
+grep -q 'ifconfig lo' "${START}"
+check $? "launcher brings the loopback interface up"
+grep -q -- 'start.sh --why' "${NM}"
+check $? "a failed start shows the log instead of a guess"
 grep -q -- '--idle' "${START}"
 check $? "server is started with an idle timeout"
 if grep -vE '^[[:space:]]*#' "${START}" | grep -qE 'killall|pkill|nickel|/dev/fb|/dev/input'; then
@@ -309,7 +313,7 @@ mkdir -p "${WORK}/start-bad/bin"
 cat > "${WORK}/start-bad/bin/catalogues" <<'FAKE'
 #!/bin/sh
 case "$1" in --ping) exit 1 ;; esac
-sleep 30
+exit 0
 FAKE
 chmod 755 "${WORK}/start-bad/bin/catalogues"
 sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/start-bad/bin\"#" \
@@ -319,7 +323,11 @@ if sh "${WORK}/start-bad/run.sh"; then
 else
     check 0 "launcher exits 1 when the server never answers"
 fi
-pkill -f "${WORK}/start-bad/bin/catalogues" 2>/dev/null || true
+sed -e "s#^INSTALL_DIR=.*#INSTALL_DIR=\"${WORK}/start-bad/bin\"#" \
+    -e "s#^LOG=.*#LOG=\"${WORK}/start-bad/catalogues.log\"#" "${START}" > "${WORK}/start-bad/why.sh"
+printf 'line one\nline two\n' > "${WORK}/start-bad/catalogues.log"
+sh "${WORK}/start-bad/why.sh" --why | grep -q 'line two'
+check $? "launcher --why shows the end of the log"
 
 echo "catalogues uninstaller:"
 CAT_UN_ZIP=""

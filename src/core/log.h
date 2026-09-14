@@ -11,6 +11,10 @@ enum class LogLevel { Debug = 0, Info, Warn, Error };
 // sink exists so a crash inside the launcher still leaves a trail.
 void log_init(const std::string& file_path, LogLevel level);
 void log_set_level(LogLevel level);
+// Open the file for each line and close it again, instead of holding it.
+// For a program that lives on while the drive it logs to is handed to a
+// computer over USB: an open file there blocks the handover.
+void log_keep_closed(bool keep_closed);
 LogLevel log_level();
 void log_write(LogLevel level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 

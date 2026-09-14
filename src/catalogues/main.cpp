@@ -6,8 +6,11 @@
 // the menu entry, serves until nobody has asked for anything in a while,
 // and exits. It never touches the screen, the input devices or the stock
 // software.
+#include <csignal>
 #include <cstdio>
+#include <fcntl.h>
 #include <string>
+#include <unistd.h>
 
 #include "catalogues/httpd.h"
 #include "catalogues/service.h"
@@ -27,6 +30,7 @@ void print_usage() {
       "\n"
       "Usage: catalogues [options]\n"
       "  --port N       listen on 127.0.0.1:N (default %d)\n"
+      "  --daemon       detach from the terminal and run in the background\n"
       "  --idle MIN     exit after MIN minutes without a request (default 60; 0 never)\n"
       "  --root DIR     treat DIR as the Kobo drive (testing on a PC)\n"
       "  --ping         exit 0 if a server is answering on the port, 1 if not\n"
@@ -43,6 +47,7 @@ int main(int argc, char** argv) {
   std::string root;
   bool ping = false;
   bool debug = false;
+  bool daemon = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -62,6 +67,8 @@ int main(int argc, char** argv) {
       root = argv[++i];
     } else if (arg == "--ping") {
       ping = true;
+    } else if (arg == "--daemon") {
+      daemon = true;
     } else if (arg == "--debug") {
       debug = true;
     } else {
@@ -72,6 +79,27 @@ int main(int argc, char** argv) {
   }
 
   if (ping) return catalogues::ping(port) ? 0 : 1;
+
+  // Off on its own: a new session, nothing of the launcher's kept open, so
+  // the menu entry that started us can finish and the drive can be handed
+  // to a computer without us in the way.
+  if (daemon) {
+    pid_t pid = fork();
+    if (pid < 0) return 1;
+    if (pid > 0) return 0;
+    setsid();
+    if (chdir("/") != 0) return 1;
+    int null = open("/dev/null", O_RDWR);
+    if (null >= 0) {
+      dup2(null, 0);
+      dup2(null, 1);
+      dup2(null, 2);
+      if (null > 2) close(null);
+    }
+  }
+  // A browser that closes a connection early must not take the server
+  // with it.
+  signal(SIGPIPE, SIG_IGN);
 
   // Its own corner of the drive, under .adds like other add-ons, and its
   // own install directory. Nothing is shared with anything else.
@@ -88,8 +116,16 @@ int main(int argc, char** argv) {
 
   ck::log_init(ck::paths().data + "/catalogues.log",
                debug ? ck::LogLevel::Debug : ck::LogLevel::Info);
+  ck::log_keep_closed(true);
   CK_LOGI("catalogues %s starting on port %d", ck::kVersion, port);
   catalogues::ensure_catalogue_file();
+
+  // The Kobo leaves the loopback interface unconfigured until its Wi-Fi
+  // scripts run, and a server cannot bind to an address the kernel does
+  // not have. On a PC this is a no-op.
+  if (!catalogues::ensure_loopback()) {
+    CK_LOGW("catalogues: could not set up the loopback interface; trying anyway");
+  }
 
   bool ok = catalogues::serve("127.0.0.1", port, catalogues::handle, nullptr,
                               idle_minutes > 0 ? idle_minutes * 60 * 1000 : 0);
