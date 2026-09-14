@@ -11,6 +11,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include "core/clock.h"
 #include "core/fs.h"
@@ -219,6 +220,7 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
                            : request.download_path;
   fs::mkdir_p(fs::dirname(target));
   std::string url = request.url.to_string();
+  std::string errfile = target + ".err";
   std::string cmd;
   bool is_curl = tool.find("curl") != std::string::npos;
   if (is_curl) {
@@ -240,6 +242,9 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
     cmd = format("%s -q -T %d -O '%s' '%s' && echo 200 || echo 000", tool.c_str(),
                  std::max(1, request.timeout_ms / 1000), target.c_str(), url.c_str());
   }
+  // Keep the fetcher's own diagnosis - the one line that says what actually
+  // went wrong - so a failure is not reported as a shrug.
+  cmd += format(" 2>'%s'", errfile.c_str());
 
   FILE* pipe = request.method == "POST" && is_curl ? popen(cmd.c_str(), "we")
                                                    : popen(cmd.c_str(), "re");
@@ -247,23 +252,55 @@ HttpResponse perform_via_tool(const HttpRequest& request) {
     response.error = "could not run " + tool;
     return response;
   }
+  int wait_status = 0;
   if (request.method == "POST" && is_curl) {
     fwrite(request.body.data(), 1, request.body.size(), pipe);
-    pclose(pipe);
+    wait_status = pclose(pipe);
     // The status code is lost in this mode; assume success if we got a body.
     response.status = fs::exists(target) ? 200 : 0;
   } else {
     std::string out;
     char buffer[128];
     while (fgets(buffer, sizeof(buffer), pipe)) out += buffer;
-    pclose(pipe);
+    wait_status = pclose(pipe);
     response.status = to_int(trim(out), 0);
   }
   if (request.download_path.empty()) {
     fs::read_file(target, response.body);
     fs::remove_file(target);
   }
-  if (response.status == 0) response.error = "the TLS client failed";
+  if (response.status == 0) {
+    int code = WIFEXITED(wait_status) ? WEXITSTATUS(wait_status) : -1;
+    // curl's own words, last line first - that is the useful one.
+    std::string detail;
+    if (fs::read_file(errfile, detail)) {
+      detail = trim(detail);
+      size_t nl = detail.find_last_of('\n');
+      if (nl != std::string::npos) detail = trim(detail.substr(nl + 1));
+      if (detail.size() > 200) detail = detail.substr(0, 200);
+    }
+    // Whether this was a certificate problem, so the fix can be named.
+    bool cert = code == 35 || code == 51 || code == 58 || code == 59 || code == 60 ||
+                code == 66 || code == 77 || code == 80 || code == 82 || code == 83 ||
+                code == 91;
+    std::string msg;
+    switch (code) {
+      case 6: msg = "could not find that server - check the address"; break;
+      case 7: msg = "could not connect to that server"; break;
+      case 28: msg = "the server did not answer in time"; break;
+      case 35: case 60: case 77: case 91:
+        msg = "the server's certificate could not be verified"; break;
+      case 51: msg = "the server's certificate did not match its address"; break;
+      default: msg = is_curl ? "the fetcher could not load that address" : "the download failed";
+    }
+    if (!detail.empty()) msg += ": " + detail;
+    if (cert) {
+      msg += ". If this is your own or a friend's server, save its certificate (PEM) at " +
+             paths().data + "/extra-ca.pem and try again.";
+    }
+    response.error = msg;
+  }
+  fs::remove_file(errfile);
   return response;
 }
 
