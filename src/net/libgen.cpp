@@ -353,16 +353,25 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     if (!endpoint.query.empty()) {
       url += "?" + fill_placeholder(endpoint.query, encoded);
       // An endpoint saved without a placeholder still needs the query.
-      if (url.find(encoded) == std::string::npos) url += "&req=" + encoded;
+      if (url.find(encoded) == std::string::npos) {
+        url += (endpoint.path.find("/fiction") != std::string::npos ? "&q=" : "&req=") + encoded;
+      }
     } else {
-      url += "?req=" + encoded;
+      url += (endpoint.path.find("/fiction") != std::string::npos ? "?q=" : "?req=") + encoded;
     }
     candidates.push_back(url);
   }
+  // The endpoints real Library-Genesis forks answer, most-likely first. A
+  // fiction server (a fanfic fork is one) searches at /fiction/?q=; the
+  // classic non-fiction table is /search.php?req=; newer forks use
+  // /index.php?req=; some expose a JSON API at /json.php. We try each and
+  // keep the first that returns rows, so one base URL covers all of them.
+  candidates.push_back(endpoint.base + "/fiction/?q=" + encoded);
+  candidates.push_back(endpoint.base + "/search.php?req=" + encoded + "&column=def");
+  candidates.push_back(endpoint.base + "/search.php?req=" + encoded);
+  candidates.push_back(endpoint.base + "/index.php?req=" + encoded);
   candidates.push_back(endpoint.base +
                        "/json.php?object=e&addkeys=*&fields=*&req=" + encoded);
-  candidates.push_back(endpoint.base + "/search.php?req=" + encoded +
-                       "&res=50&view=simple&column=def&phrase=1");
 
   std::string last_error;
   for (const std::string& url : candidates) {
@@ -426,6 +435,7 @@ bool libgen_resolve_download(const std::string& base_address, const SearchResult
     }
   }
   std::vector<std::string> pages = {
+      endpoint.base + "/fiction/" + result.md5,
       endpoint.base + "/main/" + result.md5,
       endpoint.base + "/file.php?md5=" + result.md5,
       endpoint.base + "/ads.php?md5=" + result.md5,

@@ -532,6 +532,10 @@ Response shelfmark_home(const Request& request) {
     for (size_t i = 0; i < src.size(); ++i) names += (i ? ", " : "") + src[i].name;
     body += notice("note", "<p>Type above to search: <b>" + esc(names) + "</b>.</p>");
   }
+  body += "<div class=\"foot\">Shelfmark " + std::string(ck::kVersion) +
+          (network_up() ? "" : " &middot; not connected to Wi-Fi") +
+          (ck::https_available() ? "" : " &middot; no https fetcher") +
+          "<br>Search servers: " + esc(shown_path(shelfmark_file_path())) + "</div>";
   return sm_page("Shelfmark", body);
 }
 

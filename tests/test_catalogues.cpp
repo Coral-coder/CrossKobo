@@ -19,6 +19,7 @@
 #include "core/paths.h"
 #include "core/str.h"
 #include "net/http.h"
+#include "net/libgen.h"
 
 using namespace ck;
 using catalogues::Request;
@@ -368,6 +369,27 @@ int main() {
   std::string sm_empty = fetch(kAppPort, "GET", "/shelfmark");
   CHECK(has(sm_empty, "No search servers yet"));
   CHECK(has(sm_empty, "shelfmark.txt"));
+
+
+  // ------------------------------------------------ libgen fiction parsing
+  // A fiction/fanfic server answers /fiction/?q= with a table whose rows
+  // carry the md5 as the last path segment of the book link (no ?md5=).
+  {
+    std::string fic =
+        "<table class=\"catalog\"><tbody>"
+        "<tr><td></td><td>Series</td>"
+        "<td><p><a href=\"/fiction/0123456789ABCDEF0123456789ABCDEF\">A Fanfic Tale</a></p></td>"
+        "<td>English</td><td title=\"Uploaded at 2020-01-01 00:00:00\">EPUB / 1.2 MB</td>"
+        "<td></td><td><a href=\"/fiction/0123456789ABCDEF0123456789ABCDEF\">edit</a></td></tr>"
+        "</tbody></table>";
+    std::vector<ck::SearchResult> res;
+    ck::parse_libgen_html(fic, res);
+    CHECK(res.size() == 1);
+    if (!res.empty()) {
+      CHECK(res[0].md5 == "0123456789abcdef0123456789abcdef");
+      CHECK(has(res[0].title, "A Fanfic Tale"));
+    }
+  }
 
   stop = true;
   fake.join();
