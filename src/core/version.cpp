@@ -2,6 +2,6 @@
 
 namespace ck {
 
-const char* kVersion = "0.2.9";
+const char* kVersion = "0.2.10";
 
 }  // namespace ck

@@ -370,14 +370,21 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     }
     candidates.push_back(url);
   } else {
-    // A bare host: probe the endpoints real forks answer, most-likely first.
-    // A fiction server (a fanfic fork is one) searches at /fiction/?q=; the
-    // classic non-fiction table is /search.php?req=; newer forks use
-    // /index.php?req=; some expose a JSON API at /json.php.
+    // A bare host: probe the routes real forks and front-ends answer, most-
+    // likely first, and keep the first that returns rows - so pointing at
+    // just the server, the way calibrain/shelfmark does, works. A fiction
+    // server (a fanfic fork is one) searches at /fiction/?q=; the classic
+    // non-fiction table is /search.php?req=; newer forks /index.php?req=;
+    // Anna's-Archive-style front-ends /search?...&q=&display=table; some
+    // expose a JSON API at /json.php.
     candidates.push_back(endpoint.base + "/fiction/?q=" + encoded);
     candidates.push_back(endpoint.base + "/search.php?req=" + encoded + "&column=def");
     candidates.push_back(endpoint.base + "/search.php?req=" + encoded);
     candidates.push_back(endpoint.base + "/index.php?req=" + encoded);
+    candidates.push_back(endpoint.base +
+                         "/search?index=&page=1&display=table&q=" + encoded);
+    candidates.push_back(endpoint.base + "/search?q=" + encoded);
+    candidates.push_back(endpoint.base + "/search?req=" + encoded);
     candidates.push_back(endpoint.base +
                          "/json.php?object=e&addkeys=*&fields=*&req=" + encoded);
   }
