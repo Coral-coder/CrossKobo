@@ -111,8 +111,12 @@ is never switched off.
 `/usr/local/catalogues/catalogues` is a web server bound to
 `127.0.0.1:6420` - the device's own loopback address, unreachable from the
 network. The menu entry runs `start.sh`, which starts it if it is not
-already answering, then opens the Kobo's browser on
-`http://127.0.0.1:6420/`. The server exits after an hour without a
+already answering, asks the Kobo to connect to Wi-Fi the way it does for a
+link, then opens the Kobo's browser on `http://127.0.0.1:6420/`. Nothing
+in that chain waits for the connection, so the server does: a page that
+needs a catalogue waits up to twenty seconds for the network to come up
+before asking, and says "Wi-Fi is not connected" with a Try-again button
+if it never does. The server exits after an hour without a
 request and starts again on the next tap.
 
 The pages are plain HTML: links, forms, one button. Nothing depends on a

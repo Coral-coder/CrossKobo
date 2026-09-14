@@ -263,6 +263,13 @@ grep -q '^menu_item :main :Catalogues :cmd_output' "${NM}"
 check $? "menu entry starts the server and waits for it"
 grep -q 'chain_success :nickel_browser :modal:http://127.0.0.1:6420/$' "${NM}"
 check $? "menu entry then opens the Kobo browser on it"
+# Wi-Fi first: every entry that opens the browser asks the Kobo to connect
+# before it does, the way the Kobo itself does for a link.
+if [ "$(grep -c 'nickel_wifi :autoconnect' "${NM}")" = "$(grep -c 'nickel_browser' "${NM}")" ]; then
+    check 0 "every browser entry asks for Wi-Fi first"
+else
+    check 1 "every browser entry asks for Wi-Fi first"
+fi
 grep -q '^menu_item :main :Shelfmark' "${NM}"
 check $? "Shelfmark has its own entry"
 grep -q 'open=Shelfmark' "${NM}"

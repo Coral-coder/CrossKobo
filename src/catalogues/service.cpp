@@ -3,6 +3,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <vector>
@@ -90,6 +91,33 @@ bool network_up() {
   return up;
 }
 
+// The menu entry asks the Kobo to connect before opening the browser, but
+// nothing waits for that; the page arrives here while Wi-Fi is still
+// coming up. So wait for it, within reason, before asking a server for
+// anything - a request sent a second too early fails with a resolver error
+// that tells the reader nothing.
+bool wait_for_network(int timeout_ms) {
+  for (int waited = 0; waited <= timeout_ms; waited += 500) {
+    if (network_up()) return true;
+    usleep(500 * 1000);
+  }
+  return false;
+}
+
+Response not_connected(const std::string& title, const std::string& retry_href,
+                       const std::string& back_href) {
+  Response r;
+  r.status = 503;
+  std::string body = notice("bad", "<p><b>Wi-Fi is not connected.</b></p>"
+                                   "<p>Turn Wi-Fi on from the Kobo's menu (or close this "
+                                   "window and open it again, which asks the Kobo to "
+                                   "connect), then tap Try again.</p>");
+  body += button_link(retry_href, "Try again");
+  body += button_link(back_href, "Back", true);
+  r.body = page(title, body, back_href);
+  return r;
+}
+
 std::string shown_path(const std::string& path) {
   const std::string& onboard = ck::paths().onboard;
   if (path.compare(0, onboard.size(), onboard) == 0 && path.size() > onboard.size()) {
@@ -174,9 +202,13 @@ Response browse(const Request& request, size_t id, const Settings::Catalogue& c)
   }
   std::string url = request.param("url");
   if (url.empty()) url = c.url;
+  if (!wait_for_network(20000)) {
+    return not_connected(c.name, here, url == c.url ? "/" : catalogue_path(id));
+  }
   ck::OpdsFeed feed;
   std::string err;
   if (!ck::fetch_opds(url, c.user, c.password, feed, err)) {
+    if (!network_up()) return not_connected(c.name, here, "/");
     return error_page(502, c.name, err, url == c.url ? "/" : catalogue_path(id));
   }
   bool searchable = !c.search.empty() || !feed.search_url.empty();
@@ -222,6 +254,7 @@ Response search(const Request& request, size_t id, const Settings::Catalogue& c)
   std::string here = self_url(request);
   std::string body = search_form(catalogue_path(id) + "/search", q, "Title or author");
   if (q.empty()) return html(page(c.name, body, catalogue_path(id)));
+  if (!wait_for_network(20000)) return not_connected(c.name, here, catalogue_path(id));
 
   if (c.is_libgen()) {
     std::vector<ck::SearchResult> results;
@@ -301,6 +334,7 @@ Response download(const Request& request, size_t id, const Settings::Catalogue& 
   if (request.method != "POST") return redirect(catalogue_path(id));
   std::string back = request.param("back");
   if (back.empty() || back[0] != '/') back = catalogue_path(id);
+  if (!wait_for_network(20000)) return not_connected("Not downloaded", back, back);
   std::string path;
   std::string err;
   bool ok;
