@@ -5,6 +5,7 @@
 #include "core/fs.h"
 #include "core/json.h"
 #include "core/log.h"
+#include "core/paths.h"
 #include "core/str.h"
 #include <cstring>
 
@@ -150,28 +151,70 @@ std::string md5_from_link(const std::string& href) {
   return "";
 }
 
+// A link seen inside a table row: where it points and the words it showed.
+struct RowLink {
+  std::string href;
+  std::string text;
+};
+
+// Is this link text just a mirror marker - "[1]", "2", "libgen", "GET" -
+// rather than a book title? libgen.li puts an md5 in every mirror link in
+// the last column, and their text is a number or a host name, never the
+// title. We must not mistake one of those for the title.
+bool is_mirror_marker(const std::string& text) {
+  std::string t = to_lower(trim(text));
+  if (t.empty()) return true;
+  // Strip surrounding brackets/parens a marker like "[1]" carries.
+  while (!t.empty() && (t.front() == '[' || t.front() == '(')) t.erase(t.begin());
+  while (!t.empty() && (t.back() == ']' || t.back() == ')')) t.pop_back();
+  t = trim(t);
+  if (t.empty()) return true;
+  if (t.find_first_not_of("0123456789") == std::string::npos) return true;  // a number
+  static const char* kMarkers[] = {"get",       "download", "mirror", "libgen",
+                                    "library",   "annas",    "books",  "[1]",
+                                    "[2]",       "[3]",      "[4]",    "[5]"};
+  for (const char* marker : kMarkers) {
+    if (t == marker) return true;
+  }
+  return false;
+}
+
 void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) {
   XmlParser parser(html);
-  // Cells of the row being read, plus every link the row carried.
+  // Cells of the row being read, plus every link the row carried, with the
+  // text each link showed - the title is one of them.
   std::vector<std::string> cells;
-  std::vector<std::string> hrefs;
+  std::vector<RowLink> links;
   std::string cell_text;
-  std::string title_from_link;
+  std::string link_text;
+  std::string link_href;
   bool in_row = false;
   bool in_cell = false;
-  // Set while inside the link that carries the md5: its text is the title.
-  bool in_title_link = false;
+  bool in_link = false;
 
   auto finish_row = [&]() {
-    if (!cells.empty()) {
+    if (!cells.empty() || !links.empty()) {
       SearchResult result;
-      for (const std::string& href : hrefs) {
-        std::string md5 = md5_from_link(href);
-        if (!md5.empty()) {
-          result.md5 = md5;
-          break;
+      // Pick the row's md5 and its title together. Prefer the md5 link whose
+      // text reads like a title (longest non-marker text); libgen.li's title
+      // link carries the md5 on the fiction pages, while on the non-fiction
+      // table the md5 sits in the numbered mirror links and the title link
+      // has none - so fall back to any md5 in the row, and to the longest
+      // cell for the title.
+      const RowLink* title_link = nullptr;
+      std::string any_md5;
+      for (const RowLink& link : links) {
+        std::string md5 = md5_from_link(link.href);
+        if (md5.empty()) continue;
+        if (any_md5.empty()) any_md5 = md5;
+        if (is_mirror_marker(link.text)) continue;
+        if (!title_link || trim(link.text).size() > trim(title_link->text).size()) {
+          title_link = &link;
         }
       }
+      result.md5 = title_link ? md5_from_link(title_link->href) : any_md5;
+      if (result.md5.empty()) result.md5 = any_md5;
+
       if (!result.md5.empty()) {
         // Identify columns by what they hold: forks move them around, but a
         // size still looks like a size and an extension like an extension.
@@ -186,18 +229,26 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
             result.year = value;
           }
         }
-        // The title is the cell the file link sat in; the author is usually
-        // the cell before it, and both beat anything guessed by shape.
-        result.title = trim(title_from_link);
-        if (result.title.empty()) {
+        // The title is the text of the md5 title link; if none looked like a
+        // title (the non-fiction table), take the longest cell that is not a
+        // year, size or extension.
+        if (title_link) result.title = trim(title_link->text);
+        if (result.title.empty() || is_mirror_marker(result.title)) {
+          result.title.clear();
           for (const std::string& cell : cells) {
-            if (trim(cell).size() > result.title.size()) result.title = trim(cell);
+            std::string value = trim(cell);
+            if (value.size() <= result.title.size()) continue;
+            if (is_book_extension(value) || looks_like_size(value) || looks_like_year(value))
+              continue;
+            result.title = value;
           }
         }
+        // The author is usually the cell just before the one holding the
+        // title, and both beat anything guessed by shape.
         for (size_t i = 0; i < cells.size(); ++i) {
-          if (trim(cells[i]) == result.title && i > 0) {
+          if (result.title.empty()) break;
+          if (trim(cells[i]).find(result.title) != std::string::npos && i > 0) {
             std::string previous = trim(cells[i - 1]);
-            // Skip a leading numeric id column.
             if (!previous.empty() && !looks_like_year(previous) &&
                 previous.find_first_not_of("0123456789") != std::string::npos) {
               result.author = previous;
@@ -209,8 +260,8 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
       }
     }
     cells.clear();
-    hrefs.clear();
-    title_from_link.clear();
+    links.clear();
+    in_link = false;
   };
 
   while (true) {
@@ -218,6 +269,7 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
     if (token == XmlParser::Token::End) break;
     if (token == XmlParser::Token::Text) {
       if (in_cell) cell_text += parser.text();
+      if (in_link) link_text += parser.text();
       continue;
     }
     if (token != XmlParser::Token::StartTag && token != XmlParser::Token::EndTag) continue;
@@ -230,20 +282,16 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
         in_cell = true;
         cell_text.clear();
       } else if (tag == "a" && in_row) {
-        std::string href = parser.attr("href");
-        if (!href.empty()) {
-          hrefs.push_back(href);
-          // Remember the text of the link that carries an md5: that is the
-          // title on every fork seen so far.
-          if (!md5_from_link(href).empty()) in_title_link = true;
-        }
+        link_href = parser.attr("href");
+        link_text.clear();
+        in_link = !link_href.empty();
       }
       continue;
     }
     // End tag.
-    if (tag == "a" && in_title_link) {
-      in_title_link = false;
-      if (title_from_link.empty()) title_from_link = trim(cell_text);
+    if (tag == "a" && in_link) {
+      links.push_back({link_href, link_text});
+      in_link = false;
     } else if (tag == "td" || tag == "th") {
       cells.push_back(cell_text);
       cell_text.clear();
@@ -390,6 +438,8 @@ bool libgen_search(const std::string& base_address, const std::string& query,
   }
 
   std::string last_error;
+  std::string last_body;   // the last non-empty answer, kept for diagnosis
+  std::string last_url;
   for (const std::string& url : candidates) {
     HttpResponse response = http_get(url, 20000);
     if (!response.error.empty()) {
@@ -405,6 +455,8 @@ bool libgen_search(const std::string& base_address, const std::string& query,
       last_error = "an empty answer";
       continue;
     }
+    last_body = body;
+    last_url = url;
     if (body[0] == '[' || body[0] == '{') {
       if (parse_libgen_json(body, results) && !results.empty()) {
         CK_LOGI("search: %s -> %zu results (json)", url.c_str(), results.size());
@@ -418,6 +470,16 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     }
     last_error = "nothing recognisable in the answer";
     CK_LOGI("search: %s answered %zu bytes with nothing to show", url.c_str(), body.size());
+  }
+  // The server answered but nothing parsed. Save exactly what it sent so the
+  // markup can be looked at rather than guessed - the one thing that turns a
+  // "couldn't parse" into a fix.
+  if (!last_body.empty()) {
+    std::string dump = paths().data + "/last-search.html";
+    if (fs::write_file_atomic(dump, "<!-- " + last_url + " -->\n" + last_body)) {
+      CK_LOGI("search: saved unparsed answer (%zu bytes) to %s", last_body.size(),
+              dump.c_str());
+    }
   }
   error = last_error.empty() ? "The server did not answer." : last_error;
   return false;

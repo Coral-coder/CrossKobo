@@ -416,6 +416,32 @@ int main() {
     }
   }
 
+  // ---------------------------------------- libgen.li non-fiction table
+  // The hard case: the title link carries no md5 (only an edition id), and
+  // the md5 lives in the numbered mirror links [1][2] in the last column.
+  // The title must come from the title link's text, never from "[1]".
+  {
+    std::string nf =
+        "<table class=\"c\"><tbody>"
+        "<tr><td>Author Name</td>"
+        "<td><a href=\"/index.php?id=98765\">The Real Title</a></td>"
+        "<td>Publisher</td><td>2019</td><td>English</td><td>320</td>"
+        "<td>4 Mb</td><td>pdf</td>"
+        "<td><a href=\"/ads.php?md5=fedcba9876543210fedcba9876543210\">[1]</a> "
+        "<a href=\"/get.php?md5=fedcba9876543210fedcba9876543210\">[2]</a></td></tr>"
+        "</tbody></table>";
+    std::vector<ck::SearchResult> res;
+    ck::parse_libgen_html(nf, res);
+    CHECK(res.size() == 1);
+    if (!res.empty()) {
+      CHECK(res[0].md5 == "fedcba9876543210fedcba9876543210");
+      CHECK(res[0].title == "The Real Title");
+      CHECK(res[0].author == "Author Name");
+      CHECK(res[0].extension == "pdf");
+      CHECK(res[0].year == "2019");
+    }
+  }
+
   stop = true;
   fake.join();
   app.join();

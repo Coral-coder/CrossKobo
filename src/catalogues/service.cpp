@@ -596,6 +596,14 @@ Response shelfmark_search(const Request& request) {
   }
   if (found == 0) {
     body += notice("note", "<p>Nothing found for <b>" + esc(q) + "</b>.</p>");
+    // The parser saw an answer it could not read: it saved exactly what the
+    // server sent. Say where, so the markup can be looked at.
+    std::string dump = ck::paths().data + "/last-search.html";
+    if (ck::fs::exists(dump)) {
+      body += notice("note", "<p>The server answered but nothing could be read from it. "
+                             "The raw answer was saved to <b>" + esc(shown_path(dump)) +
+                             "</b> on the Kobo's drive.</p>");
+    }
   }
   body += rows;
   if (!trouble.empty()) body += notice("bad", trouble);
