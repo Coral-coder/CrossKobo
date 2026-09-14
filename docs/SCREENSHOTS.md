@@ -8,8 +8,11 @@ Regenerate them with:
 
 ```sh
 cmake --build build -j"$(nproc)"
-./build/crosskobo-sim --out out/sim
+./build/crosskobo-sim --out out/sim --doc-width 520
 ```
+
+`--doc-width` also writes the scaled copies under `out/sim/doc` that this
+page embeds.
 
 ## Home
 
@@ -21,6 +24,20 @@ else. Books with no cover art get a generated one.
 The Dashboard theme swaps the grid for reading statistics.
 
 ![Dashboard theme](screenshots/home-dashboard.png)
+
+The Aero theme: vertical gradients, a glass wash over the chrome, droplets
+on the page ground, four-colour navigation, and a hue per coverless book.
+
+![Aero theme](screenshots/home-aero.png)
+
+Night mode has its own Aero palette - deep water rather than plain black,
+with the tints washed toward the ground so they keep their contrast.
+
+![Aero theme at night](screenshots/home-aero-night.png)
+
+The quick panel, one swipe down from the top edge of any screen.
+
+![Quick panel](screenshots/quick-panel.png)
 
 ## Reading
 
@@ -40,6 +57,10 @@ waveform when there is colour on it.
 Folders, formats, per-book progress, search and sort.
 
 ![Library](screenshots/library.png)
+
+The same list under Aero.
+
+![Library, Aero theme](screenshots/library-aero.png)
 
 ## Notebooks
 

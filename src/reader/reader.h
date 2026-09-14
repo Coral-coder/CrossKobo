@@ -79,6 +79,10 @@ class ReaderScreen : public View {
   // A session is the book being open, not each return from a menu.
   bool session_counted_ = false;
   int64_t last_auto_turn_ms_ = 0;
+  // Clock-in-the-status-bar bookkeeping: repaint on the minute, and do it
+  // with a partial update so an image page does not flash.
+  int64_t last_clock_minute_ = -1;
+  mutable bool clock_repaint_ = false;
   int64_t last_save_ms_ = 0;
 };
 

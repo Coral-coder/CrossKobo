@@ -396,6 +396,13 @@ void ReaderScreen::draw(Canvas& canvas, const Rect& bounds) {
 
 Refresh ReaderScreen::refresh_hint() const {
   if (full_refresh_next_) return Refresh::Image;
+  if (clock_repaint_) {
+    // Only the clock in the status bar moved. A partial update leaves the
+    // page alone; a colour refresh here would flash the whole panel once a
+    // minute on any page carrying an image.
+    clock_repaint_ = false;
+    return Refresh::Fast;
+  }
   bool colour_page = false;
   if (!pages_.empty()) {
     for (const Line& line : pages_[page_index_].lines) {
@@ -429,7 +436,13 @@ bool ReaderScreen::on_tick() {
     next_page();
     return true;
   }
-  return settings().status_bar_clock;  // repaint for the clock
+  if (!settings().status_bar_clock) return false;
+  // Repaint for the clock only when the minute actually changes.
+  int64_t minute = wall_minutes();
+  if (minute == last_clock_minute_) return false;
+  last_clock_minute_ = minute;
+  clock_repaint_ = true;
+  return true;
 }
 
 // ------------------------------------------------------------------- input

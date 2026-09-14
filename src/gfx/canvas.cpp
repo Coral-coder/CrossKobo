@@ -268,6 +268,125 @@ void Canvas::draw_thick_line_aa(float x0, float y0, float x1, float y1, float w0
   }
 }
 
+void Canvas::fill_rect_gradient(const Rect& r, Color top, Color bottom) {
+  if (!valid()) return;
+  Rect a = r.intersect(clip_);
+  if (a.empty() || r.h <= 0) return;
+  for (int y = a.y; y < a.bottom(); ++y) {
+    float t = r.h > 1 ? (float)(y - r.y) / (float)(r.h - 1) : 0.0f;
+    Color row_color = lerp_color(top, bottom, t);
+    if (row_color.a == 255) {
+      uint32_t px = row_color.pack();
+      uint32_t* p = row(y) + a.x;
+      for (int x = 0; x < a.w; ++x) p[x] = px;
+    } else if (row_color.a != 0) {
+      blend_span(y, a.x, a.right(), row_color);
+    }
+  }
+}
+
+namespace {
+
+// Horizontal extent of a rounded rectangle on a given row, so gradients and
+// glosses can follow the shape without a temporary mask buffer.
+bool round_rect_span(const Rect& r, int radius, int y, int& x0, int& x1) {
+  if (y < r.y || y >= r.bottom()) return false;
+  int rad = std::min(radius, std::min(r.w, r.h) / 2);
+  x0 = r.x;
+  x1 = r.right();
+  if (rad <= 0) return true;
+  int dy = 0;
+  if (y < r.y + rad) {
+    dy = r.y + rad - y;
+  } else if (y >= r.bottom() - rad) {
+    dy = y - (r.bottom() - rad - 1);
+  } else {
+    return true;
+  }
+  if (dy > rad) return false;
+  int inset = rad - (int)std::lround(std::sqrt((double)(rad * rad - dy * dy)));
+  x0 = r.x + inset;
+  x1 = r.right() - inset;
+  return x1 > x0;
+}
+
+}  // namespace
+
+void Canvas::fill_round_rect_gradient(const Rect& r, int radius, Color top, Color bottom) {
+  if (!valid() || r.empty()) return;
+  Rect area = r.intersect(clip_);
+  if (area.empty()) return;
+  for (int y = area.y; y < area.bottom(); ++y) {
+    int x0 = 0, x1 = 0;
+    if (!round_rect_span(r, radius, y, x0, x1)) continue;
+    x0 = std::max(x0, area.x);
+    x1 = std::min(x1, area.right());
+    if (x1 <= x0) continue;
+    float t = r.h > 1 ? (float)(y - r.y) / (float)(r.h - 1) : 0.0f;
+    Color row_color = lerp_color(top, bottom, t);
+    if (row_color.a == 255) {
+      uint32_t px = row_color.pack();
+      uint32_t* p = row(y);
+      for (int x = x0; x < x1; ++x) p[x] = px;
+    } else if (row_color.a != 0) {
+      blend_span(y, x0, x1, row_color);
+    }
+  }
+}
+
+void Canvas::fill_gloss(const Rect& r, int radius, uint8_t strength) {
+  if (!valid() || r.empty()) return;
+  // The wash covers the top 45% and fades away, which is what reads as
+  // "glass" without turning the whole shape milky.
+  int height = std::max(2, r.h * 45 / 100);
+  Rect area = Rect(r.x, r.y, r.w, height).intersect(clip_);
+  if (area.empty()) return;
+  for (int y = area.y; y < area.bottom(); ++y) {
+    int x0 = 0, x1 = 0;
+    if (!round_rect_span(r, radius, y, x0, x1)) continue;
+    x0 = std::max(x0, area.x);
+    x1 = std::min(x1, area.right());
+    if (x1 <= x0) continue;
+    float t = (float)(y - r.y) / (float)height;
+    // Quadratic fade: bright at the top edge, gone by the midline.
+    float fade = (1.0f - t) * (1.0f - t);
+    uint8_t alpha = (uint8_t)std::lround(strength * fade);
+    if (!alpha) continue;
+    blend_span(y, x0, x1, Color(255, 255, 255, alpha));
+  }
+}
+
+void Canvas::draw_soft_shadow(const Rect& r, int radius, int spread, uint8_t strength) {
+  if (!valid() || r.empty() || spread <= 0) return;
+  for (int i = spread; i >= 1; --i) {
+    uint8_t alpha = (uint8_t)std::max(1, strength / (i + 1));
+    Rect pass(r.x - i / 2, r.y + i, r.w + i, r.h);
+    fill_round_rect(pass, radius + i / 2, Color(0, 0, 0, alpha));
+  }
+}
+
+void Canvas::draw_bubble(int cx, int cy, int radius, Color tint) {
+  if (radius <= 1) return;
+  // Body, rim, then an off-centre highlight: the water droplet that was on
+  // every desktop wallpaper of the era.
+  uint8_t body = tint.a ? tint.a : 70;
+  fill_circle(cx, cy, radius, tint.with_alpha(body));
+  // Rim and highlight follow the body's strength, so a droplet asked for
+  // faintly (over a night palette, say) does not keep a hard bright edge.
+  float k = (float)body / 70.0f;
+  uint8_t rim = (uint8_t)std::min(255.0f, 120.0f * k);
+  uint8_t spot = (uint8_t)std::min(255.0f, 150.0f * k);
+  int steps = std::max(12, radius * 2);
+  for (int i = 0; i < steps; ++i) {
+    float angle = (float)i / (float)steps * 6.28318f;
+    int x = cx + (int)std::lround(std::cos(angle) * radius);
+    int y = cy + (int)std::lround(std::sin(angle) * radius);
+    set_pixel(x, y, Color(255, 255, 255, rim));
+  }
+  int hl = std::max(1, radius / 3);
+  fill_circle(cx - radius / 3, cy - radius / 3, hl, Color(255, 255, 255, spot));
+}
+
 void Canvas::invert_rect(const Rect& r) {
   Rect a = r.intersect(clip_);
   if (a.empty()) return;

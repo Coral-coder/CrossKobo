@@ -64,6 +64,20 @@ class Canvas {
   void invert_rect(const Rect& r);
   void fill_rect_blend(const Rect& r, Color c);  // honours c.a
 
+  // ------------------------------------------------------ gradients, gloss
+  // Vertical linear gradient. Kaleido panels render large flat colour areas
+  // well but show banding on subtle ramps, so these are used for chrome
+  // rather than for anything the eye rests on.
+  void fill_rect_gradient(const Rect& r, Color top, Color bottom);
+  void fill_round_rect_gradient(const Rect& r, int radius, Color top, Color bottom);
+  // The glossy highlight of the late-2000s: a bright translucent wash over
+  // the upper part of a shape, fading out towards its middle.
+  void fill_gloss(const Rect& r, int radius, uint8_t strength = 90);
+  // A soft shadow under a rounded shape, drawn as a few offset passes.
+  void draw_soft_shadow(const Rect& r, int radius, int spread = 4, uint8_t strength = 40);
+  // A water droplet: a tinted bubble with a rim and a highlight.
+  void draw_bubble(int cx, int cy, int radius, Color tint);
+
   // --------------------------------------------------------------- blits
   void blit(const Canvas& src, int dst_x, int dst_y);
   void blit(const Canvas& src, const Rect& src_rect, int dst_x, int dst_y);

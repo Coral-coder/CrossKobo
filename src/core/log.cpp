@@ -14,6 +14,7 @@ std::mutex g_mutex;
 FILE* g_file = nullptr;
 std::string g_path;
 LogLevel g_level = LogLevel::Info;
+bool g_keep_closed = false;
 
 const char* level_tag(LogLevel l) {
   switch (l) {
@@ -55,6 +56,15 @@ void log_init(const std::string& file_path, LogLevel level) {
 }
 
 void log_set_level(LogLevel level) { g_level = level; }
+
+void log_keep_closed(bool keep_closed) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_keep_closed = keep_closed;
+  if (keep_closed && g_file) {
+    fclose(g_file);
+    g_file = nullptr;
+  }
+}
 LogLevel log_level() { return g_level; }
 
 void log_write(LogLevel level, const char* fmt, ...) {
@@ -74,6 +84,20 @@ void log_write(LogLevel level, const char* fmt, ...) {
 
   std::lock_guard<std::mutex> lock(g_mutex);
   fprintf(stderr, "[%s] %s %s\n", stamp, level_tag(level), body);
+  if (g_keep_closed && !g_path.empty()) {
+    FILE* f = fopen(g_path.c_str(), "ae");
+    if (f) {
+      fprintf(f, "[%s] %s %s\n", stamp, level_tag(level), body);
+      long size = ftell(f);
+      fclose(f);
+      if (size >= kMaxLogBytes) {
+        std::string old = g_path + ".1";
+        ::remove(old.c_str());
+        ::rename(g_path.c_str(), old.c_str());
+      }
+    }
+    return;
+  }
   if (g_file) {
     fprintf(g_file, "[%s] %s %s\n", stamp, level_tag(level), body);
     fflush(g_file);

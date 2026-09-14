@@ -4,6 +4,9 @@
 #include <cstdio>
 
 #include "app/settings.h"
+#include "app/catalogue_file.h"
+#include "app/update.h"
+#include "net/sntp.h"
 #include "core/fs.h"
 #include "core/json.h"
 #include "core/log.h"
@@ -130,6 +133,151 @@ int main() {
 
   // Point sizes must scale with panel density.
   CHECK(clamped.font_px(300) > clamped.font_px(212));
+
+  // Catalogues: a saved search endpoint round-trips, and the public-domain
+  // defaults are seeded only when the file has never carried a list.
+  {
+    Settings fresh;
+    fresh.apply_catalogue_defaults();
+    CHECK(fresh.catalogues.size() == 2);
+    CHECK(!fresh.catalogues.empty() && !fresh.catalogues[0].url.empty());
+    // Seeding twice does not duplicate.
+    fresh.apply_catalogue_defaults();
+    CHECK(fresh.catalogues.size() == 2);
+
+    Settings::Catalogue mine;
+    mine.name = "My server";
+    mine.search = "https://books.example.org/search?q={searchTerms}";
+    mine.user = "reader";
+    mine.password = "hunter2";
+    CHECK(mine.search_only());
+    fresh.catalogues.push_back(mine);
+
+    Json json = fresh.to_json();
+    Settings loaded;
+    loaded.from_json(json);
+    CHECK(loaded.catalogues.size() == 3);
+    const Settings::Catalogue& back = loaded.catalogues.back();
+    CHECK(back.name == "My server");
+    CHECK(back.search == mine.search);
+    CHECK(back.user == "reader" && back.password == "hunter2");
+    CHECK(back.search_only());
+
+    // An explicitly empty list stays empty: removing them all is a choice.
+    Settings none;
+    none.catalogues.clear();
+    Json empty_json = none.to_json();
+    Settings reloaded;
+    reloaded.from_json(empty_json);
+    CHECK(reloaded.catalogues.empty());
+  }
+
+  // The catalogue file: a list of servers that travels, edited over USB or
+  // pasted in from a friend. One bad line must not cost the others.
+  {
+    const char* kFile =
+        "# a comment\n"
+        "\n"
+        "Friend's library | https://books.example.net/opds\n"
+        "https://standardebooks.org/feeds/opds\n"
+        "Private | https://host/opds | reader | secret\n"
+        "Their fanfic | https://fic.example.net/search.php?req={searchTerms}\n"
+        "Forced | https://host/weird | libgen\n"
+        "Searchy | https://host/find?q={searchTerms}\n"
+        "this line has no address at all\n";
+    std::vector<Settings::Catalogue> list = parse_catalogue_list(kFile);
+    CHECK(list.size() == 6);
+    if (list.size() == 6) {
+      CHECK(list[0].name == "Friend's library");
+      CHECK(list[0].url == "https://books.example.net/opds");
+      CHECK(list[0].from_file);
+      CHECK(!list[0].is_libgen());
+      // An address on its own is named after its host.
+      CHECK(list[1].name == "standardebooks.org");
+      CHECK(list[2].user == "reader" && list[2].password == "secret");
+      // search.php means the search format, whatever else the line says.
+      CHECK(list[3].is_libgen());
+      CHECK(list[3].url == "https://fic.example.net/search.php?req={searchTerms}");
+      CHECK(list[3].search_only());
+      // And the format can be stated outright.
+      CHECK(list[4].is_libgen());
+      // A placeholder with no recognised endpoint is a plain search source.
+      CHECK(!list[5].is_libgen());
+      CHECK(list[5].search == "https://host/find?q={searchTerms}");
+      CHECK(list[5].search_only());
+    }
+
+    // The JSON form, bare and wrapped.
+    const char* kJson =
+        "[{\"name\":\"Mine\",\"url\":\"https://host/opds\",\"user\":\"me\"}]";
+    std::vector<Settings::Catalogue> from_json = parse_catalogue_list(kJson);
+    CHECK(from_json.size() == 1);
+    if (!from_json.empty()) {
+      CHECK(from_json[0].name == "Mine" && from_json[0].user == "me");
+      CHECK(from_json[0].from_file);
+    }
+    CHECK(parse_catalogue_list(std::string("{\"catalogues\":") + kJson + "}").size() == 1);
+    CHECK(parse_catalogue_list("{not json at all").empty());
+    CHECK(parse_catalogue_list("").empty());
+
+    // File-sourced entries are never written into settings.json: the file
+    // stays the one place they are defined.
+    Settings s;
+    s.catalogues.clear();
+    Settings::Catalogue own;
+    own.name = "Typed in";
+    own.url = "https://host/opds";
+    s.catalogues.push_back(own);
+    s.catalogues.push_back(list[0]);
+    Settings reloaded;
+    reloaded.from_json(s.to_json());
+    CHECK(reloaded.catalogues.size() == 1);
+    if (!reloaded.catalogues.empty()) CHECK(reloaded.catalogues[0].name == "Typed in");
+  }
+
+  // The SNTP decoder: byte arithmetic on a packet from the network, so the
+  // interesting cases are the malformed ones.
+  {
+    unsigned char reply[48] = {0};
+    std::string error;
+    // Mode 4, stratum 2, transmit timestamp = 2026-09-13T12:00:00Z.
+    const int64_t kUnix = 1789646400LL;
+    const uint32_t kNtp = (uint32_t)(kUnix + 2208988800LL);
+    reply[0] = 0x24;
+    reply[1] = 2;
+    reply[40] = (unsigned char)(kNtp >> 24);
+    reply[41] = (unsigned char)(kNtp >> 16);
+    reply[42] = (unsigned char)(kNtp >> 8);
+    reply[43] = (unsigned char)kNtp;
+    CHECK(sntp_decode(reply, error) == kUnix);
+
+    // A client packet is not an answer.
+    reply[0] = 0x23;
+    CHECK(sntp_decode(reply, error) == 0);
+    reply[0] = 0x24;
+
+    // Stratum 0 is the kiss of death.
+    reply[1] = 0;
+    CHECK(sntp_decode(reply, error) == 0);
+    reply[1] = 2;
+
+    // A zero timestamp, and a time before the epoch we trust.
+    unsigned char zero_stamp[48] = {0};
+    zero_stamp[0] = 0x24;
+    zero_stamp[1] = 2;
+    CHECK(sntp_decode(zero_stamp, error) == 0);
+    reply[40] = 0x80;  // 1932 in NTP terms
+    CHECK(sntp_decode(reply, error) == 0);
+  }
+
+  // Version comparison drives the updater: a wrong answer either nags
+  // forever or never offers anything.
+  CHECK(compare_versions("0.1.4", "0.1.3") > 0);
+  CHECK(compare_versions("0.1.3", "0.1.3") == 0);
+  CHECK(compare_versions("0.2.0", "0.10.0") < 0);
+  CHECK(compare_versions("1.0", "0.9.9") > 0);
+  CHECK(compare_versions("v0.1.4", "0.1.4") == 0);
+  CHECK(compare_versions("0.1.4-rc1", "0.1.4") == 0);
 
   printf("%s\n", failures ? "FAILED" : "ok");
   return failures ? 1 : 0;

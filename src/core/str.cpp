@@ -22,6 +22,14 @@ std::string to_lower(const std::string& s) {
   return out;
 }
 
+std::string to_upper(const std::string& s) {
+  std::string out = s;
+  for (char& ch : out) {
+    if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+  }
+  return out;
+}
+
 bool starts_with(const std::string& s, const std::string& prefix) {
   return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
 }

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(crosskobo CXX C)
 
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
@@ -35,6 +36,7 @@ file(GLOB CK_SOURCES
   src/platform/*.cpp
   src/ui/*.cpp
   src/epub/*.cpp
+  src/net/*.cpp
   src/reader/*.cpp
   src/notes/*.cpp
   src/library/*.cpp
@@ -47,6 +49,18 @@ target_link_libraries(ck_core PUBLIC ck_thirdparty)
 add_executable(crosskobo src/main.cpp)
 target_link_libraries(crosskobo PRIVATE ck_core)
 
+# Catalogues: a separate program that serves book catalogues to the Kobo's
+# own browser. It shares the network clients with CrossKobo and nothing
+# else - no screen, no input, no stock-software handling.
+add_library(ck_catalogues STATIC
+  src/catalogues/httpd.cpp
+  src/catalogues/page.cpp
+  src/catalogues/service.cpp
+)
+target_link_libraries(ck_catalogues PUBLIC ck_core)
+add_executable(catalogues src/catalogues/main.cpp)
+target_link_libraries(catalogues PRIVATE ck_catalogues)
+
 # The device build embeds nothing; assets are installed alongside the binary.
 if(CROSSKOBO_SIM)
   add_executable(crosskobo-sim src/sim/sim_main.cpp)
@@ -58,7 +72,7 @@ file(GLOB CK_TESTS tests/test_*.cpp)
 foreach(t ${CK_TESTS})
   get_filename_component(name ${t} NAME_WE)
   add_executable(${name} ${t})
-  target_link_libraries(${name} PRIVATE ck_core)
+  target_link_libraries(${name} PRIVATE ck_catalogues ck_core)
   # Tests need the bundled fonts; pass their location explicitly so
   # they can run from any working directory.
   add_test(NAME ${name} COMMAND ${name} ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)

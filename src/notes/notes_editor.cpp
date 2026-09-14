@@ -66,6 +66,9 @@ class NoteEditor : public View {
 
   Refresh refresh_hint() const override { return Refresh::Image; }
   std::string title() const override { return notebook_->title(); }
+  // A finger draws on this canvas, so a stroke that starts at an edge must
+  // reach the page rather than being read as "go back".
+  bool edge_gestures() const override { return false; }
 
   void draw(Canvas& canvas, const Rect& bounds) override;
   bool handle(const InputEvent& event) override;

@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <string>
 
 namespace ck {
@@ -8,6 +9,33 @@ namespace ck {
 namespace sys {
 
 bool nickel_running();
+// Raises or clears the flag the boot hook watches: while it is set, the
+// hook stops drawing the boot animation and leaves the screen to us.
+void signal_ready(bool ready);
+// Lets the boot watchdog know the stock UI is meant to run from now on.
+void allow_nickel();
+
+// Stops the firmware's boot animation.
+//
+// The animation script draws a frame every quarter second through the
+// firmware's own framebuffer tool, and it normally runs until Nickel
+// finishes starting and kills it. CrossKobo stops Nickel before that
+// happens, so the animation would otherwise keep repainting over the
+// interface forever - which is exactly what it did on the first devices
+// this ran on. Both firmware generations name the script differently, and
+// the drawing tool has to go too.
+void stop_boot_animation();
+// Clears the launcher's crash counter once CrossKobo has clearly survived
+// start-up, so forced power-offs weeks apart cannot add up to a spurious
+// self-disable. Three forced power-offs in quick succession still trip it,
+// which is the documented way out of a wedged screen.
+void clear_crash_count();
+
+// Runs `work` in a detached grandchild process and returns immediately. The
+// shipping binary is statically linked and a wedged network must never hold
+// up drawing, so background work that only touches files and sockets is
+// done in a child rather than a thread. Nothing has to be reaped.
+bool run_detached(const std::function<void()>& work);
 // Siphons PLATFORM/PRODUCT/DBUS_SESSION_BUS_ADDRESS etc. out of a running
 // Nickel so we can hand them back when restarting it later. Must be called
 // before stop_nickel().

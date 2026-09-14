@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "app/settings.h"
+#include "app/update.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -13,7 +14,11 @@
 #include "gfx/font.h"
 #include "platform/device.h"
 #include "platform/power.h"
+#include "platform/net.h"
 #include "platform/system.h"
+#include "net/sntp.h"
+#include "platform/usbms.h"
+#include "app/home.h"
 #include "library/library.h"
 #include "reader/state.h"
 #include "ui/theme.h"
@@ -71,6 +76,7 @@ bool App::init(bool simulate, int sim_width, int sim_height) {
     input.set_screen_size(screen.width(), screen.height());
     input.set_touch_transform(settings().touch_transform);
     input.set_pen_transform(settings().pen_transform);
+    input.set_auto_transpose(!settings().touch_calibrated);
     input.set_rotation(settings().rotation);
     input.open();
   }
@@ -91,6 +97,7 @@ void App::apply_settings() {
   Input::instance().set_rotation(s.rotation);
   Input::instance().set_touch_transform(s.touch_transform);
   Input::instance().set_pen_transform(s.pen_transform);
+  Input::instance().set_auto_transpose(!s.touch_calibrated);
 
   Power& power = Power::instance();
   if (power.has_frontlight()) {
@@ -110,7 +117,10 @@ void App::push(ViewPtr view) {
 }
 
 void App::pop() {
-  if (stack_.size() <= 1) return;
+  if (stack_.size() <= 1) {
+    if (quit_on_back_) quit(0);
+    return;
+  }
   stack_.back()->on_hide();
   retired_.push_back(std::move(stack_.back()));
   stack_.pop_back();
@@ -185,7 +195,7 @@ void App::draw_frame() {
   View* view = top();
   if (!view) return;
 
-  if (view->opaque()) canvas.clear(theme().bg);
+  if (view->opaque()) paint_background(canvas);
   canvas.clear_clip();
   view->draw(canvas, screen.bounds());
   draw_toast(canvas);
@@ -207,7 +217,7 @@ void App::draw_sleep_screen() {
   Screen& screen = Screen::instance();
   Canvas& canvas = screen.canvas();
   const Theme& th = theme();
-  canvas.clear(th.bg);
+  paint_background(canvas);
   Rect b = screen.bounds();
 
   const Settings& s = settings();
@@ -359,6 +369,8 @@ void App::wake_up() {
   }
   Input::instance().rescan();
   Input::instance().set_screen_size(Screen::instance().width(), Screen::instance().height());
+  // Resuming can restart the firmware's blink pattern.
+  if (!simulated_) Power::instance().stop_boot_led();
   Input::instance().drain();
   invalidate(Refresh::Flash);
 }
@@ -386,14 +398,19 @@ void App::check_usb() {
     return_to_kobo_ui();
     return;
   }
-  // Ask. The stock UI owns USB mass storage, so transferring files means
-  // handing control back to it; CrossKobo returns on the next boot.
-  if (confirm("USB connected",
-              "Switch to the Kobo UI so your computer can see the drive?\n\n"
-              "CrossKobo starts again next time you power on.",
-              "Switch", "Stay")) {
-    return_to_kobo_ui();
+  if (action == "mount") {
+    UsbMs& usb = UsbMs::instance();
+    settings().save();
+    if (usb.start()) {
+      push(make_usb_active_screen());
+    } else {
+      show_message("Could not share the drive", usb.last_error());
+    }
+    return;
   }
+  // Ask: share the drive from here, hand over to the stock software, or
+  // just charge.
+  push(make_usb_prompt_screen());
 }
 
 bool App::confirm(const std::string& title, const std::string& message,
@@ -409,7 +426,7 @@ bool App::confirm(const std::string& title, const std::string& message,
   while (!done) {
     // Repaint the view underneath so the dialog composites over real content.
     if (View* view = top()) {
-      canvas.clear(th.bg);
+      paint_background(canvas);
       canvas.clear_clip();
       view->draw(canvas, bounds);
     }
@@ -468,6 +485,44 @@ void App::show_message(const std::string& title, const std::string& message) {
 }
 
 void App::handle_global(const InputEvent& event) {
+  // Edge gestures: a swipe up from the bottom goes back, a swipe down from
+  // the top opens the quick panel. There is no hardware back button on
+  // these devices, and a view that fills the screen can leave the top bar's
+  // chevron easy to miss, so this is the way out from anywhere.
+  if (event.type == EventType::Swipe) {
+    View* view = top();
+    if (view && view->edge_gestures()) {
+      Rect b = screen_bounds();
+      int start_y = event.y - event.dy;
+      int edge = std::max(48, b.h / 10);
+      if (event.swipe == SwipeDir::Up && start_y >= b.bottom() - edge) {
+        if (depth() > 1 || quit_on_back_) {
+          pop();
+        } else {
+          show_toast("Home");
+        }
+        invalidate(Refresh::Text);
+        return;
+      }
+      if (event.swipe == SwipeDir::Down && start_y <= b.y + edge) {
+        push(make_quick_panel());
+        return;
+      }
+    }
+  }
+  // Both page buttons together opens touch calibration. It is the one
+  // screen that has to be reachable when taps land nowhere near where they
+  // are drawn, and the page buttons are the only input that cannot be
+  // mis-calibrated.
+  if (event.type == EventType::KeyDown &&
+      (event.key == Key::PageForward || event.key == Key::PageBack)) {
+    Key other = event.key == Key::PageForward ? Key::PageBack : Key::PageForward;
+    if (Input::instance().key_held(other)) {
+      View* view = top();
+      if (!view || std::string(view->kind()) != "touch-wizard") push(make_touch_wizard());
+      return;
+    }
+  }
   if (event.type == EventType::KeyDown && event.key == Key::Power) {
     sleep_now();
     return;
@@ -514,6 +569,20 @@ int App::run() {
     return kExitError;
   }
   int64_t last_usb_check = 0;
+  // The firmware's boot animation can be started a moment after we take the
+  // screen, so sweep for it again over the first few seconds.
+  // Everything below is for an interface that owns the device. In minimal
+  // mode the stock software still does, so none of it applies.
+  const bool owns_device = !simulated_ && !minimal_;
+  int64_t animation_sweep_until = owns_device ? now_ms() + 20000 : 0;
+  int64_t last_animation_sweep = 0;
+  // Survive this long and the launcher's crash counter is forgiven, so
+  // forced power-offs weeks apart cannot add up to a self-disable.
+  int64_t forgive_crashes_at = owns_device ? now_ms() + 120000 : 0;
+  // An update check, if the radio is already up, a minute after start-up so
+  // it never competes with opening a book.
+  int64_t update_check_at =
+      (!owns_device || !settings().auto_update_check) ? 0 : now_ms() + 60000;
   while (!quit_requested_) {
     // Safe point: nothing is executing inside a view any more.
     release_retired();
@@ -524,11 +593,45 @@ int App::run() {
     if (timeout < 0) timeout = 1000;
     timeout = std::min(timeout, 1000);
 
+    if (now_ms() < animation_sweep_until && now_ms() - last_animation_sweep > 2000) {
+      last_animation_sweep = now_ms();
+      sys::stop_boot_animation();
+    }
+    // The clock, once per session, as soon as there is a network. In a
+    // child process: settimeofday changes the clock for everyone, and a
+    // time server that never answers must not stall the reader.
+    if (!clock_synced_ && owns_device && settings().clock_sync &&
+        Net::instance().connected()) {
+      clock_synced_ = true;
+      sys::run_detached([]() {
+        std::string error;
+        int64_t drift = 0;
+        if (!sync_clock(error, &drift)) CK_LOGW("clock: %s", error.c_str());
+      });
+    }
+    if (update_check_at && now_ms() > update_check_at) {
+      update_check_at = 0;
+      start_background_check();
+    }
+    {
+      UpdateInfo available;
+      if (take_background_result(available)) {
+        show_toast("CrossKobo " + available.version +
+                       " is available - Settings, Software update",
+                   6000);
+      }
+    }
+    if (forgive_crashes_at && now_ms() > forgive_crashes_at) {
+      forgive_crashes_at = 0;
+      sys::clear_crash_count();
+      CK_LOGI("app: two minutes up; crash counter cleared");
+    }
+
     InputEvent event = Input::instance().next(timeout);
     if (event.type == EventType::Timeout) {
       if (view && view->tick_ms() > 0 && view->on_tick()) invalidate();
-      check_idle();
-      if (now_ms() - last_usb_check > 2000) {
+      if (owns_device) check_idle();
+      if (owns_device && now_ms() - last_usb_check > 2000) {
         last_usb_check = now_ms();
         check_usb();
       }

@@ -1,6 +1,7 @@
 // Builds a small EPUB in memory, opens it through the real Book/Layout
 // stack, paginates it and renders pages to PNG. This is the closest thing
 // to a reading smoke test that can run off-device.
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -8,6 +9,9 @@
 #include "app/settings.h"
 #include "core/fs.h"
 #include "core/log.h"
+#include "net/discover.h"
+#include "net/libgen.h"
+#include "net/opds.h"
 #include "epub/book.h"
 #include "core/str.h"
 #include "epub/layout.h"
@@ -299,6 +303,157 @@ int main(int argc, char** argv) {
     }
   }
   CHECK(colourful);
+
+
+  // OPDS catalogues: the Atom dialect every self-hosted library speaks.
+  // Real feeds mix namespace prefixes, relative links and several
+  // acquisition formats per entry, so parse a sample shaped like one.
+  {
+    const char* kFeed =
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\" "
+        "xmlns:opds=\"http://opds-spec.org/2010/catalog\">\n"
+        "  <title>Shelfmark</title>\n"
+        "  <link rel=\"search\" type=\"application/atom+xml\" "
+        "href=\"/opds/search?q={searchTerms}\"/>\n"
+        "  <link rel=\"next\" href=\"/opds/all?page=2\"/>\n"
+        "  <entry>\n"
+        "    <title>Fiction</title>\n"
+        "    <link type=\"application/atom+xml;profile=opds-catalog\" href=\"fiction\"/>\n"
+        "  </entry>\n"
+        "  <entry>\n"
+        "    <title>The Colour of Ink</title>\n"
+        "    <author><name>A. Tester</name></author>\n"
+        "    <summary>A book about pigment.</summary>\n"
+        "    <link rel=\"http://opds-spec.org/image/thumbnail\" href=\"/covers/7.jpg\"/>\n"
+        "    <link rel=\"http://opds-spec.org/acquisition\" type=\"application/pdf\" "
+        "href=\"/get/7.pdf\"/>\n"
+        "    <link rel=\"http://opds-spec.org/acquisition\" "
+        "type=\"application/epub+zip\" length=\"4096\" href=\"/get/7.epub\"/>\n"
+        "  </entry>\n"
+        "</feed>\n";
+    OpdsFeed feed;
+    CHECK(parse_opds(kFeed, "https://books.example.org:8443/opds/root", feed));
+    CHECK(feed.title == "Shelfmark");
+    CHECK(feed.entries.size() == 2);
+    CHECK(feed.next_url == "https://books.example.org:8443/opds/all?page=2");
+    if (feed.entries.size() == 2) {
+      // Navigation entry: a relative href resolves against the feed's directory.
+      CHECK(feed.entries[0].is_navigation());
+      CHECK(feed.entries[0].feed_url == "https://books.example.org:8443/opds/fiction");
+      // Acquisition entry: EPUB wins over the PDF listed before it.
+      const OpdsEntry& book = feed.entries[1];
+      CHECK(!book.is_navigation());
+      CHECK(book.author == "A. Tester");
+      CHECK(book.summary == "A book about pigment.");
+      CHECK(book.download_url == "https://books.example.org:8443/get/7.epub");
+      CHECK(book.size == 4096);
+      CHECK(book.cover_url == "https://books.example.org:8443/covers/7.jpg");
+      CHECK(book.filename() == "A. Tester - The Colour of Ink.epub");
+    }
+    std::string search = opds_search_url(feed.search_url, "colour ink");
+    CHECK(search == "https://books.example.org:8443/opds/search?q=colour%20ink");
+    // A catalogue that advertises a bare endpoint still gets a query.
+    CHECK(opds_search_url("https://x/opds/find", "abc") == "https://x/opds/find?q=abc");
+  }
+
+  // The search format Library Genesis popularised, which self-hosted
+  // catalogue software inherits by forking it. Every fork moves the columns
+  // around, so the parser identifies them by what they hold - and that is
+  // exactly the part worth testing.
+  {
+    const char* kMd5a = "0123456789abcdef0123456789abcdef";
+    const char* kMd5b = "fedcba9876543210fedcba9876543210";
+    std::string html =
+        "<table class='c'><tr><th>ID</th><th>Author</th><th>Title</th>"
+        "<th>Publisher</th><th>Year</th><th>Pages</th><th>Language</th>"
+        "<th>Size</th><th>Extension</th><th>Mirrors</th></tr>\n"
+        "<tr valign=top><td>1207</td><td><a href='author.php?id=9'>A. Tester</a></td>"
+        "<td width=500><a href='book/index.php?md5=" + std::string(kMd5a) +
+        "'>The Colour of Ink</a></td><td>Self</td><td>2024</td><td>312</td>"
+        "<td>English</td><td>1.4 Mb</td><td>epub</td>"
+        "<td><a href='/main/" + std::string(kMd5a) + "'>[1]</a></td></tr>\n"
+        "<tr valign=top><td>1208</td><td>B. Writer</td>"
+        "<td width=500><a href='book/index.php?md5=" + std::string(kMd5b) +
+        "'>A Short Walk</a></td><td>Self</td><td>2019</td><td>88</td>"
+        "<td>English</td><td>755 Kb</td><td>pdf</td>"
+        "<td><a href='/main/" + std::string(kMd5b) + "'>[1]</a></td></tr>\n"
+        "</table>";
+    std::vector<SearchResult> results;
+    parse_libgen_html(html, results);
+    CHECK(results.size() == 2);
+    if (results.size() == 2) {
+      CHECK(results[0].title == "The Colour of Ink");
+      CHECK(results[0].author == "A. Tester");
+      CHECK(results[0].extension == "epub");
+      CHECK(results[0].size_text == "1.4 Mb");
+      CHECK(results[0].year == "2024");
+      CHECK(results[0].md5 == kMd5a);
+      CHECK(results[0].filename() == "A. Tester - The Colour of Ink.epub");
+      CHECK(results[1].title == "A Short Walk");
+      CHECK(results[1].extension == "pdf");
+      CHECK(results[1].md5 == kMd5b);
+    }
+
+    // The JSON form, with the key case forks disagree about and a byte
+    // count rather than a written size.
+    std::string json =
+        "[{\"MD5\":\"" + std::string(kMd5a) + "\",\"Title\":\"Notes on Colour\","
+        "\"Author\":\"C. Painter\",\"Extension\":\"EPUB\",\"FileSize\":\"2097152\","
+        "\"Year\":\"2021\"}]";
+    std::vector<SearchResult> from_json;
+    CHECK(parse_libgen_json(json, from_json));
+    CHECK(from_json.size() == 1);
+    if (from_json.size() == 1) {
+      CHECK(from_json[0].title == "Notes on Colour");
+      CHECK(from_json[0].extension == "epub");
+      CHECK(from_json[0].md5 == kMd5a);
+      CHECK(from_json[0].size_text.find("2") != std::string::npos);
+    }
+    // An object wrapping the array is also seen in the wild.
+    std::vector<SearchResult> wrapped;
+    CHECK(parse_libgen_json("{\"data\":" + json + "}", wrapped));
+    CHECK(wrapped.size() == 1);
+
+    // Picking the file id out of a link, in the shapes servers use.
+    CHECK(md5_from_link("book/index.php?md5=" + std::string(kMd5a)) == kMd5a);
+    CHECK(md5_from_link("http://host/main/" + std::string(kMd5b)) == kMd5b);
+    CHECK(md5_from_link("/get.php?md5=" + std::string(kMd5a) + "&key=xyz") == kMd5a);
+    CHECK(md5_from_link("author.php?id=9").empty());
+    CHECK(md5_from_link("/main/not-a-hash").empty());
+
+    // The mirror page: the link labelled GET wins over anything else.
+    std::string page =
+        "<html><body><a href='/index.php'>Home</a>"
+        "<a href='/covers/x.jpg'>cover</a>"
+        "<h2><a href='/get.php?md5=" + std::string(kMd5a) + "&key=abc'>GET</a></h2>"
+        "<a href='/other.epub'>mirror 2</a></body></html>";
+    std::string link = direct_link_from_page(page, "http://host:8080");
+    CHECK(link == "http://host:8080/get.php?md5=" + std::string(kMd5a) + "&key=abc");
+    // With no GET link, a file-shaped one will do.
+    CHECK(direct_link_from_page("<a href='/books/x.epub'>dl</a>", "http://h") ==
+          "http://h/books/x.epub");
+    CHECK(direct_link_from_page("<a href='/about'>about</a>", "http://h").empty());
+
+    // Which addresses are this format, and which are not.
+    CHECK(looks_like_libgen_endpoint("http://host/search.php?req={searchTerms}"));
+    CHECK(looks_like_libgen_endpoint("http://host:8080/json.php"));
+    CHECK(!looks_like_libgen_endpoint("http://host/opds"));
+    CHECK(!looks_like_libgen_endpoint("https://standardebooks.org/feeds/opds"));
+  }
+
+  // Discovery probes a fixed set of ports and paths; a typo in either is
+  // the difference between finding a server and sweeping for nothing.
+  {
+    const std::vector<int>& ports = discovery_ports();
+    CHECK(std::find(ports.begin(), ports.end(), 8083) != ports.end());   // Calibre-Web
+    CHECK(std::find(ports.begin(), ports.end(), 5000) != ports.end());   // Kavita
+    CHECK(std::find(ports.begin(), ports.end(), 25600) != ports.end());  // Komga
+    const std::vector<std::string>& paths = discovery_paths();
+    CHECK(std::find(paths.begin(), paths.end(), "/opds") != paths.end());
+    CHECK(std::find(paths.begin(), paths.end(), "/api/opds") != paths.end());
+    for (const std::string& path : paths) CHECK(!path.empty() && path[0] == '/');
+  }
 
   printf("%s\n", failures ? "FAILED" : "ok");
   return failures ? 1 : 0;

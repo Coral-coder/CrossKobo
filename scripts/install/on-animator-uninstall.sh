@@ -10,6 +10,10 @@
 rm -rf /usr/local/crosskobo
 rm -f /etc/init.d/crosskobo
 rm -f /etc/rcS.d/S99crosskobo
+# The one file CrossKobo adds to the user partition: its NickelMenu entries,
+# which would otherwise point at a binary that is no longer there. Books,
+# notebooks and settings are left alone.
+rm -f /mnt/onboard/.adds/nm/crosskobo
 
 # Restore the stock animation script over ourselves.
 cat > /etc/init.d/on-animator.sh <<'STOCK'
@@ -39,6 +43,17 @@ while true ; do
 done
 STOCK
 chmod 755 /etc/init.d/on-animator.sh
+sync
 
-# Draw the animation for this boot, as the stock script would.
-exec /bin/sh /etc/init.d/on-animator.sh
+# Stop here. Do NOT run the restored script.
+#
+# This process was started by rcS in the animation script's place, and the
+# firmware stops the animation with "killall on-animator.sh" - which matches
+# on the process name. A script run as "/bin/sh /etc/init.d/on-animator.sh"
+# is called "sh", so that kill misses it and the boot animation paints over
+# the stock software forever. That is exactly what happened.
+#
+# Exiting now means nothing paints over this boot, and from the next boot rcS
+# starts the restored script itself, under its own name, killable exactly as
+# the firmware expects.
+exit 0

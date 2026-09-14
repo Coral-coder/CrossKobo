@@ -1,7 +1,10 @@
 #include "platform/system.h"
 
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "core/clock.h"
@@ -41,6 +44,50 @@ std::string run_capture(const std::string& command) {
 bool is_root() { return geteuid() == 0; }
 
 bool nickel_running() { return run("pkill -0 nickel 2>/dev/null") == 0; }
+
+void signal_ready(bool ready) {
+  const char* kFlag = "/tmp/crosskobo-ready";
+  if (ready) {
+    fs::write_file_atomic(kFlag, "1\n");
+  } else {
+    fs::remove_file(kFlag);
+  }
+}
+
+void stop_boot_animation() {
+  // Names differ by firmware: on-animator.sh on 4.x, animator.sh on 5.x,
+  // and pickel/pickel-mtk is the tool both use to push frames.
+  run("killall -q -TERM on-animator.sh animator.sh 2>/dev/null");
+  run("killall -q -TERM pickel pickel-mtk 2>/dev/null");
+  // The scripts loop, so a TERM to the shell may land between iterations.
+  sleep_ms(150);
+  run("killall -q -KILL on-animator.sh animator.sh pickel pickel-mtk 2>/dev/null");
+}
+
+bool run_detached(const std::function<void()>& work) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    CK_LOGW("sys: could not fork: %s", strerror(errno));
+    return false;
+  }
+  if (pid > 0) {
+    int status = 0;
+    waitpid(pid, &status, 0);   // the intermediate exits at once
+    return true;
+  }
+  // Double fork: the grandchild is reparented to init, so the caller never
+  // has to wait for it.
+  if (fork() != 0) _exit(0);
+  work();
+  _exit(0);
+}
+
+void clear_crash_count() { fs::remove_file("/usr/local/crosskobo/crash-count"); }
+
+void allow_nickel() {
+  fs::write_file_atomic("/tmp/crosskobo-allow-nickel", "1\n");
+  fs::remove_file("/tmp/crosskobo-ready");
+}
 
 void capture_nickel_env() {
   std::string pid = run_capture("pidof -s nickel 2>/dev/null");
@@ -103,6 +150,8 @@ bool start_nickel() {
     return false;
   }
   CK_LOGI("sys: handing back to the stock Kobo UI");
+  // Stand the boot watchdog down first, or it will kill what we start.
+  allow_nickel();
   wifi_down();
   sync();
 

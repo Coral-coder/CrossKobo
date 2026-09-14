@@ -1,0 +1,31 @@
+# Catalogues - book catalogues in the Kobo's own browser.
+#
+# Each entry starts the Catalogues server (a few hundred milliseconds the
+# first time, nothing after that), asks the Kobo to connect to Wi-Fi the
+# way it does for a link, and opens the Kobo's browser on it. The browser
+# does the touching, typing and scrolling; the server does the books, and
+# waits for the connection before it asks a catalogue for anything.
+#
+# The browser opens whether or not the start script reported success, so a
+# tap always lands you in the app; if the server truly did not come up the
+# page says so itself. Nothing here ever dumps the log at you.
+#
+# On firmware 4.23 and later the "main" entries appear in the NickelMenu
+# tab at the bottom right of the home screen. Rename or remove entries by
+# editing this file; NickelMenu reads it again when the device restarts.
+
+menu_item :main :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_always :nickel_wifi :autoconnect
+  chain_always :nickel_browser :modal:http://127.0.0.1:6420/
+
+menu_item :main :Shelfmark :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_always :nickel_wifi :autoconnect
+  chain_always :nickel_browser :modal:http://127.0.0.1:6420/shelfmark
+
+# Downloads land in the Downloads folder on the drive. The Kobo notices them
+# when it next looks; this asks it to look now.
+menu_item :main :Catalogues - add downloads to library :nickel_misc :rescan_books
+
+menu_item :library :Catalogues :cmd_output :9000:quiet:/usr/local/catalogues/start.sh
+  chain_always :nickel_wifi :autoconnect
+  chain_always :nickel_browser :modal:http://127.0.0.1:6420/

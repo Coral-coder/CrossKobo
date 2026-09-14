@@ -10,6 +10,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/watcher.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -17,6 +18,7 @@
 #include "core/str.h"
 #include "gfx/font.h"
 #include "library/library.h"
+#include "net/server.h"
 #include "notes/notes.h"
 #include "platform/input.h"
 #include "platform/screen.h"
@@ -61,6 +63,19 @@ InputEvent swipe(SwipeDir dir) {
   e.swipe = dir;
   e.x = kWidth / 2;
   e.y = kHeight / 2;
+  e.time_ms = now_ms();
+  return e;
+}
+
+// An edge swipe: `from_y` is where the finger started, which is what the
+// app tests against, so dy carries the rest.
+InputEvent edge_swipe(SwipeDir dir, int from_y, int to_y) {
+  InputEvent e;
+  e.type = EventType::Swipe;
+  e.swipe = dir;
+  e.x = kWidth / 2;
+  e.y = to_y;
+  e.dy = to_y - from_y;
   e.time_ms = now_ms();
   return e;
 }
@@ -291,6 +306,137 @@ int main(int argc, char** argv) {
   app.pump(pen(EventType::PenUp, 400, 500, 0));
   app.render_now();
   app.pop_to_root();
+
+  // Edge gestures: there is no hardware back button, so a swipe up from the
+  // bottom edge has to be the way out of any screen, and a swipe down from
+  // the top has to reach the quick panel.
+  app.pop_to_root();
+  app.push(make_library_screen(root));
+  CHECK(app.depth() == 2);
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);                       // back out of the library
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);                       // and the root stays put
+  app.pump(edge_swipe(SwipeDir::Down, 8, kHeight / 3));
+  CHECK(app.depth() == 2);                       // quick panel
+  app.render_now();
+  app.pump(edge_swipe(SwipeDir::Up, kHeight - 10, kHeight / 2));
+  CHECK(app.depth() == 1);
+  // A swipe that starts in the middle is the view's own business: in the
+  // reader those turn pages.
+  app.push(make_library_screen(root));
+  app.pump(edge_swipe(SwipeDir::Up, kHeight / 2, kHeight / 3));
+  CHECK(app.depth() == 2);
+  app.pop_to_root();
+
+  // The transfer screen draws without a network, and without starting a
+  // server: it explains what is missing instead.
+  app.push(make_transfer_screen());
+  app.render_now();
+  CHECK(!TransferServer::instance().running());
+  app.pop();
+
+  // The catalogue list draws its empty state, and adding one walks two
+  // keyboards; the browser itself needs a server, so it is not pushed here.
+  app.push(make_catalogue_screen());
+  app.render_now();
+  CHECK(app.depth() == 2);
+  app.pop();
+
+  // Touch calibration. The wizard derives the mapping from three taps in
+  // the panel's own coordinates, which is the only thing that works when
+  // taps land nowhere near where they are drawn.
+  {
+    const int kW = 1264, kH = 1680;
+    // A panel like the Libra Colour's: its X axis runs down the screen and
+    // its Y axis runs right to left.
+    auto to_raw = [&](int sx, int sy, int out[2]) {
+      out[0] = sy;
+      out[1] = kW - sx;
+    };
+    int tl[2], tr[2], bl[2];
+    to_raw(0, 0, tl);
+    to_raw(kW - 1, 0, tr);
+    to_raw(0, kH - 1, bl);
+    TouchTransform tf;
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(tf.swap_xy);
+    CHECK(tf.mirror_x);
+    CHECK(!tf.mirror_y);
+
+    // A panel that needs nothing done to it.
+    auto identity = [&](int sx, int sy, int out[2]) {
+      out[0] = sx;
+      out[1] = sy;
+    };
+    identity(0, 0, tl);
+    identity(kW - 1, 0, tr);
+    identity(0, kH - 1, bl);
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(!tf.swap_xy && !tf.mirror_x && !tf.mirror_y);
+
+    // And one mounted upside down.
+    auto rotated = [&](int sx, int sy, int out[2]) {
+      out[0] = kW - sx;
+      out[1] = kH - sy;
+    };
+    rotated(0, 0, tl);
+    rotated(kW - 1, 0, tr);
+    rotated(0, kH - 1, bl);
+    CHECK(derive_touch_transform(tl, tr, bl, tf));
+    CHECK(!tf.swap_xy && tf.mirror_x && tf.mirror_y);
+
+    // Three taps in the same place say nothing.
+    int same[2] = {100, 100};
+    CHECK(!derive_touch_transform(same, same, same, tf));
+  }
+
+  // The wizard itself draws, and both page buttons together reach it.
+  app.pop_to_root();
+  app.push(make_touch_wizard());
+  app.render_now();
+  CHECK(app.depth() == 2);
+  app.pop();
+
+  // The watcher reacts to exactly the filenames it was given, and writing
+  // the trigger files twice leaves an edited one alone.
+  {
+    std::vector<Trigger> triggers = {
+        {"Catalogues.txt", "--catalogues", "Open me.\n"},
+        {"Extra.txt", "", ""},   // recognised, never created
+    };
+    CHECK(watcher_command_for(triggers, "Catalogues.txt") == "--catalogues");
+    CHECK(watcher_command_for(triggers, "Extra.txt").empty());
+    CHECK(watcher_command_for(triggers, "Some Book.epub") == "\xff");
+    CHECK(watcher_command_for(triggers, "catalogues.txt") == "\xff");  // case matters
+
+    std::string dir = std::string(root) + "/triggers";
+    fs::mkdir_p(dir);
+    CHECK(write_trigger_files(dir, triggers));
+    std::string path = dir + "/Catalogues.txt";
+    CHECK(fs::exists(path));
+    CHECK(!fs::exists(dir + "/Extra.txt"));
+    CHECK(fs::write_file_atomic(path, "mine"));
+    CHECK(write_trigger_files(dir, triggers));
+    std::string body;
+    CHECK(fs::read_file(path, body) && body == "mine");
+  }
+
+  // Device classification. The Libra Colour's panel reports a stylus tool
+  // AND multitouch on one node; classifying it as a digitiser alone is what
+  // left finger taps landing on stale coordinates.
+  {
+    InputCaps elan = classify_caps(true, true, true, true);
+    CHECK(elan.touch && elan.pen);
+    InputCaps panel = classify_caps(false, true, true, true);
+    CHECK(panel.touch && !panel.pen);
+    InputCaps wacom = classify_caps(true, false, true, false);
+    CHECK(wacom.pen && !wacom.touch);
+    InputCaps single_touch = classify_caps(false, false, true, true);
+    CHECK(single_touch.touch && !single_touch.pen);
+    InputCaps buttons = classify_caps(false, false, false, false);
+    CHECK(!buttons.touch && !buttons.pen);
+  }
 
   // Everything still standing, and the home screen still draws.
   app.render_now();

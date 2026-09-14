@@ -1,0 +1,15 @@
+# CrossKobo entries for NickelMenu.
+#
+# The stock Kobo software is a closed Qt application: its own Discover tab
+# cannot be extended from outside it. NickelMenu is the established way to
+# add entries to the stock menus - it patches nickel at runtime - so this
+# file gives it three of ours. It is copied to .adds/nm/crosskobo on the
+# drive only when NickelMenu is already installed, and the CrossKobo
+# uninstaller removes it again.
+#
+# NickelMenu: https://github.com/pgaskin/NickelMenu
+
+menu_item :main :CrossKobo :cmd_spawn :quiet:/usr/local/crosskobo/menu-launch.sh
+menu_item :main :Catalogues (OPDS) :cmd_spawn :quiet:/usr/local/crosskobo/menu-launch.sh --catalogues
+menu_item :main :Shelfmark :cmd_spawn :quiet:/usr/local/crosskobo/menu-launch.sh --catalogue Shelfmark
+menu_item :library :Catalogues (OPDS) :cmd_spawn :quiet:/usr/local/crosskobo/menu-launch.sh --catalogues
