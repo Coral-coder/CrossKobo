@@ -43,11 +43,26 @@ pre{font-size:16px;white-space:pre-wrap;word-wrap:break-word;background:#f4f4f4;
 
 std::string esc(const std::string& text) { return html_escape(text); }
 
+// Recolours the parts that carry the blue accent, so a section can look
+// like its own thing rather than another page of the same app.
+static std::string accent_style(const std::string& c) {
+  return ".top{background:" + c + "}"
+         ".row .g{border-color:" + c + ";color:" + c + "}"
+         ".row.nav .t{color:" + c + "}.row.nav .t:before{color:" + c + "}"
+         "form.search input[type=text]{border-color:" + c + "}"
+         "button,.btn{border-color:" + c + ";background:" + c + "}"
+         ".btn.second,button.second{background:#fff;color:" + c + "}"
+         "h2{color:" + c + "}";
+}
+
 std::string page(const std::string& title, const std::string& body,
-                 const std::string& back_href, const std::string& back_label) {
+                 const std::string& back_href, const std::string& back_label,
+                 const std::string& accent) {
   std::string out = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">\n";
   out += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
-  out += "<title>" + esc(title) + "</title>\n<style>" + std::string(kStyle) + "</style>\n";
+  out += "<title>" + esc(title) + "</title>\n<style>" + std::string(kStyle);
+  if (!accent.empty()) out += accent_style(accent);
+  out += "</style>\n";
   out += "</head><body>\n<div class=\"top\">";
   if (!back_href.empty()) {
     out += "<a class=\"back\" href=\"" + esc(back_href) + "\">&#8249; " + esc(back_label) + "</a>";

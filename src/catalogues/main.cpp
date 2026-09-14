@@ -119,6 +119,7 @@ int main(int argc, char** argv) {
   ck::log_keep_closed(true);
   CK_LOGI("catalogues %s starting on port %d", ck::kVersion, port);
   catalogues::ensure_catalogue_file();
+  catalogues::ensure_shelfmark_file();
 
   // The Kobo leaves the loopback interface unconfigured until its Wi-Fi
   // scripts run, and a server cannot bind to an address the kernel does

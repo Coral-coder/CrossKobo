@@ -19,6 +19,33 @@ it.
 *(Rendered at the Libra Colour's width in a desktop browser; the Kobo's
 browser draws the same pages.)*
 
+## Shelfmark — the search engine
+
+Shelfmark is separate from Catalogues. It is not an OPDS browser: it is a
+**search engine** with its **own sources file**, and its own menu entry. You
+open it, you type, it searches every server you have listed at once, and
+every result is one tap to download.
+
+![Shelfmark search](screenshots/shelfmark-results.png)
+
+Its servers live in their own file — **never** `catalogues.txt`:
+
+    .adds/catalogues/shelfmark.txt
+
+One search server per line, hostnames not IP numbers:
+
+    My server | https://fic.example.net/search.php?req={searchTerms}
+    My server | https://fic.example.net/search.php?req={searchTerms} | user | password
+
+A search-format server (`search.php` / `json.php`, the Library-Genesis
+search shape a lot of self-hosted things speak) is searched in that format
+and files come down by their id; an OPDS server that advertises a search
+works too. No servers are shipped — the file starts empty with instructions,
+and you add your own. Editing this file has nothing to do with your OPDS
+catalogues, and vice-versa.
+
+The **Shelfmark** menu entry opens it straight to the search box.
+
 ## Install
 
 Firmware 4.x (every Libra Colour, Clara Colour, Clara BW, Libra 2, Sage,
@@ -76,13 +103,15 @@ The kind of server is worked out from the address: `search.php` or
 endpoint, anything else an OPDS feed. Add `libgen` or `opds` to the line if
 the guess comes out wrong.
 
-### Shelfmark, Calibre-Web, Kavita, Komga, BookLore
+### Calibre-Web, Kavita, Komga, BookLore
 
-All of these speak OPDS. Find the OPDS address in the server's settings -
-for Shelfmark it is `/opds` on the server - and add a line with it, plus a
-user and password if it asks for one:
+All of these speak OPDS. Find the OPDS address in the server's settings and
+add a line with it, plus a user and password if it asks for one:
 
-    Shelfmark | https://books.example.net/opds | me | secret
+    Calibre-Web | https://books.example.net/opds | me | secret
+
+(Shelfmark is not here — it is a search engine, set up in its own file; see
+the Shelfmark section above.)
 
 ### A search-format server
 

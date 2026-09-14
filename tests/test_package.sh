@@ -272,8 +272,8 @@ else
 fi
 grep -q '^menu_item :main :Shelfmark' "${NM}"
 check $? "Shelfmark has its own entry"
-grep -q 'open=Shelfmark' "${NM}"
-check $? "Shelfmark entry opens the catalogue by name"
+grep -q 'modal:http://127.0.0.1:6420/shelfmark' "${NM}"
+check $? "Shelfmark entry opens its own search page"
 grep -q 'nickel_misc :rescan_books' "${NM}"
 check $? "a menu entry adds downloads to the library"
 grep -q '^menu_item :library :Catalogues' "${NM}"

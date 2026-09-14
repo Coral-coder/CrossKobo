@@ -40,13 +40,15 @@ Response redirect(const std::string& to) {
 }
 
 Response error_page(int status, const std::string& title, const std::string& message,
-                    const std::string& back_href) {
+                    const std::string& back_href, const std::string& home_href = "/",
+                    const std::string& home_label = "All catalogues",
+                    const std::string& accent = "") {
   Response r;
   r.status = status;
   std::string body = notice("bad", "<p>" + esc(message) + "</p>");
   if (!back_href.empty()) body += button_link(back_href, "Back", true);
-  body += button_link("/", "All catalogues", true);
-  r.body = page(title, body, back_href.empty() ? "/" : back_href);
+  body += button_link(home_href, home_label, true);
+  r.body = page(title, body, back_href.empty() ? home_href : back_href, "Back", accent);
   return r;
 }
 
@@ -105,7 +107,7 @@ bool wait_for_network(int timeout_ms) {
 }
 
 Response not_connected(const std::string& title, const std::string& retry_href,
-                       const std::string& back_href) {
+                       const std::string& back_href, const std::string& accent = "") {
   Response r;
   r.status = 503;
   std::string body = notice("bad", "<p><b>Wi-Fi is not connected.</b></p>"
@@ -114,7 +116,7 @@ Response not_connected(const std::string& title, const std::string& retry_href,
                                    "connect), then tap Try again.</p>");
   body += button_link(retry_href, "Try again");
   body += button_link(back_href, "Back", true);
-  r.body = page(title, body, back_href);
+  r.body = page(title, body, back_href, "Back", accent);
   return r;
 }
 
@@ -404,8 +406,9 @@ Response help() {
       "<p>Any of these speaks OPDS. Find the OPDS address in its settings (for Shelfmark it "
       "is <b>/opds</b> on the server) and add a line with it, plus a user and password if "
       "it asks for one:</p>"
-      "<pre>Shelfmark | https://books.example.net/opds | me | secret</pre>"
-      "<p>The <b>Shelfmark</b> menu entry opens whichever line is named Shelfmark.</p>"
+      "<pre>Calibre-Web | https://books.example.net/opds | me | secret</pre>"
+      "<p><b>Shelfmark</b> is separate: it is a search engine with its own menu entry "
+      "and its own file, <b>shelfmark.txt</b>. Nothing here touches it.</p>"
       "<h2>A search-format server</h2>"
       "<p>A server that answers <b>search.php?req=</b> or <b>json.php</b> the way Library "
       "Genesis forks do is searched in that format. Give it the search address:</p>"
@@ -435,6 +438,228 @@ Response status() {
            json_escape(download_dir()) + "\",\"file\":\"" +
            json_escape(ck::catalogue_file_path()) + "\"}\n";
   return r;
+}
+
+
+// ============================= Shelfmark ==================================
+//
+// Shelfmark is a search engine, not a feed browser. It has its own sources
+// file - shelfmark.txt, never catalogues.txt - and its own look. You open
+// it, you type, it searches every server listed there at once, and every
+// hit is one tap to download. The servers are search-format ones (the
+// libgen search shape a lot of self-hosted things speak), and OPDS servers
+// that advertise a search are searched too. No addresses are shipped.
+
+const char* kShelfmarkAccent = "#6a1b9a";
+
+std::string shelfmark_file_path() { return ck::paths().data + "/shelfmark.txt"; }
+
+std::vector<Settings::Catalogue> shelfmark_sources() {
+  std::string text;
+  if (!ck::fs::read_file(shelfmark_file_path(), text)) return {};
+  return ck::parse_catalogue_list(text);
+}
+
+Response sm_page(const std::string& title, const std::string& body,
+                 const std::string& back_href = "", const std::string& back_label = "Back") {
+  return html(page(title, body, back_href, back_label, kShelfmarkAccent));
+}
+
+// One result, whichever kind of server it came from. `s` is the source
+// index, so the download knows which server (and which credentials) to use.
+std::string sm_libgen_row(size_t s, const std::string& label, const ck::SearchResult& r,
+                          const std::string& back) {
+  std::string href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&md5=" + ck::url_encode(r.md5) +
+                     "&url=" + ck::url_encode(r.direct_url) + "&title=" + ck::url_encode(r.title) +
+                     "&author=" + ck::url_encode(r.author) + "&ext=" + ck::url_encode(r.extension) +
+                     "&size=" + ck::url_encode(r.size_text) + "&year=" + ck::url_encode(r.year) +
+                     "&back=" + ck::url_encode(back);
+  std::string meta = r.author;
+  if (!r.year.empty()) meta += (meta.empty() ? "" : " · ") + r.year;
+  if (!r.size_text.empty()) meta += (meta.empty() ? "" : " · ") + r.size_text;
+  if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
+  return row(href, r.title.empty() ? "Untitled" : r.title, meta, ck::to_upper(r.extension));
+}
+
+std::string sm_opds_row(size_t s, const std::string& label, const ck::OpdsEntry& e,
+                        const std::string& back) {
+  std::string href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&url=" +
+                     ck::url_encode(e.download_url) + "&title=" + ck::url_encode(e.title) +
+                     "&author=" + ck::url_encode(e.author) + "&type=" +
+                     ck::url_encode(e.download_type) + "&back=" + ck::url_encode(back);
+  std::string meta = e.author;
+  if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
+  std::string tag = ck::to_upper(ck::fs::extension(e.filename()));
+  return row(href, e.title.empty() ? "Untitled" : e.title, meta, tag);
+}
+
+std::string shelfmark_setup_note() {
+  return notice("note",
+                "<p><b>No search servers yet.</b></p>"
+                "<p>Shelfmark searches the servers you list in this file on the Kobo's "
+                "drive:</p><pre>" + esc(shown_path(shelfmark_file_path())) + "</pre>"
+                "<p>Plug the Kobo into a computer and add one per line - a search-format "
+                "server (search.php / json.php), or an OPDS server that offers a search:</p>"
+                "<pre>My server | https://fic.example.net/search.php?req={searchTerms}</pre>"
+                "<p>It is Shelfmark's own file. Your OPDS catalogues stay in catalogues.txt "
+                "and are browsed from Catalogues instead.</p>");
+}
+
+Response shelfmark_home(const Request& request) {
+  std::vector<Settings::Catalogue> src = shelfmark_sources();
+  std::string body = search_form("/shelfmark/search", "", "Search for a title or author");
+  if (src.empty()) {
+    body += shelfmark_setup_note();
+  } else {
+    std::string names;
+    for (size_t i = 0; i < src.size(); ++i) names += (i ? ", " : "") + src[i].name;
+    body += notice("note", "<p>Type above to search: <b>" + esc(names) + "</b>.</p>");
+  }
+  return sm_page("Shelfmark", body);
+}
+
+Response shelfmark_search(const Request& request) {
+  std::string q = ck::trim(request.param("q"));
+  std::vector<Settings::Catalogue> src = shelfmark_sources();
+  std::string here = self_url(request);
+  std::string body = search_form("/shelfmark/search", q, "Search for a title or author");
+  if (src.empty()) {
+    body += shelfmark_setup_note();
+    return sm_page("Shelfmark", body);
+  }
+  if (q.empty()) return sm_page("Shelfmark", body);
+  if (!wait_for_network(20000)) {
+    return not_connected("Shelfmark", here, "/shelfmark", kShelfmarkAccent);
+  }
+
+  int found = 0;
+  std::string rows;
+  std::string trouble;
+  bool multi = src.size() > 1;
+  for (size_t i = 0; i < src.size(); ++i) {
+    const Settings::Catalogue& c = src[i];
+    std::string label = multi ? c.name : "";
+    if (c.is_libgen()) {
+      std::vector<ck::SearchResult> results;
+      std::string err;
+      if (!ck::libgen_search(c.search_address(), q, results, err)) {
+        trouble += "<p>" + esc(c.name) + ": " + esc(err) + "</p>";
+        continue;
+      }
+      for (const ck::SearchResult& r : results) {
+        rows += sm_libgen_row(i, label, r, here);
+        ++found;
+      }
+    } else {
+      std::string tmpl = c.search;
+      std::string err;
+      if (tmpl.empty()) {
+        ck::OpdsFeed root;
+        if (ck::fetch_opds(c.url, c.user, c.password, root, err)) tmpl = root.search_url;
+      }
+      if (tmpl.empty()) {
+        trouble += "<p>" + esc(c.name) + ": offers no search.</p>";
+        continue;
+      }
+      ck::OpdsFeed feed;
+      if (!ck::fetch_opds(ck::opds_search_url(tmpl, q), c.user, c.password, feed, err)) {
+        trouble += "<p>" + esc(c.name) + ": " + esc(err) + "</p>";
+        continue;
+      }
+      for (const ck::OpdsEntry& e : feed.entries) {
+        if (e.download_url.empty()) continue;
+        rows += sm_opds_row(i, label, e, here);
+        ++found;
+      }
+    }
+  }
+  if (found == 0) {
+    body += notice("note", "<p>Nothing found for <b>" + esc(q) + "</b>.</p>");
+  }
+  body += rows;
+  if (!trouble.empty()) body += notice("bad", trouble);
+  return sm_page("Shelfmark", body, "/shelfmark", "Shelfmark");
+}
+
+Response shelfmark_book(const Request& request) {
+  std::vector<Settings::Catalogue> src = shelfmark_sources();
+  int s = ck::to_int(request.param("s"), -1);
+  if (s < 0 || s >= (int)src.size()) {
+    return error_page(404, "Shelfmark", "That result is gone - search again.", "/shelfmark",
+                      "/shelfmark", "Shelfmark", kShelfmarkAccent);
+  }
+  std::string title = request.param("title");
+  std::string author = request.param("author");
+  std::string back = request.param("back");
+  if (back.empty() || back[0] != '/') back = "/shelfmark";
+  if (title.empty()) title = "Untitled";
+
+  std::string body = "<h2>" + esc(title) + "</h2>";
+  if (!author.empty()) body += "<p>" + esc(author) + "</p>";
+  std::string ext = request.param("ext");
+  std::string details = ext.empty() ? request.param("type") : ck::to_upper(ext);
+  if (!request.param("year").empty()) details += (details.empty() ? "" : " · ") + request.param("year");
+  if (!request.param("size").empty()) details += (details.empty() ? "" : " · ") + request.param("size");
+  if (src.size() > 1) details += (details.empty() ? "" : " · ") + src[(size_t)s].name;
+  if (!details.empty()) body += "<p class=\"small\">" + esc(details) + "</p>";
+  body += "<p class=\"small\">Saves to the Downloads folder on this Kobo.</p>";
+
+  std::vector<std::pair<std::string, std::string>> fields = {
+      {"s", request.param("s")}, {"title", title}, {"author", author},
+      {"url", request.param("url")}, {"type", request.param("type")},
+      {"md5", request.param("md5")}, {"ext", ext}, {"back", back},
+  };
+  body += button_form("/shelfmark/download", fields, "Download", "Downloading…");
+  body += button_link(back, "Back to results", true);
+  return sm_page("Shelfmark", body, back, "Back");
+}
+
+Response shelfmark_download(const Request& request) {
+  if (request.method != "POST") return redirect("/shelfmark");
+  std::vector<Settings::Catalogue> src = shelfmark_sources();
+  int s = ck::to_int(request.param("s"), -1);
+  if (s < 0 || s >= (int)src.size()) {
+    return error_page(404, "Shelfmark", "That result is gone - search again.", "/shelfmark",
+                      "/shelfmark", "Shelfmark", kShelfmarkAccent);
+  }
+  const Settings::Catalogue& c = src[(size_t)s];
+  std::string back = request.param("back");
+  if (back.empty() || back[0] != '/') back = "/shelfmark";
+  if (!wait_for_network(20000)) {
+    return not_connected("Shelfmark", back, back, kShelfmarkAccent);
+  }
+  std::string path;
+  std::string err;
+  bool ok;
+  if (c.is_libgen()) {
+    ck::SearchResult r;
+    r.title = request.param("title");
+    r.author = request.param("author");
+    r.md5 = request.param("md5");
+    r.extension = request.param("ext");
+    r.direct_url = request.param("url");
+    ok = ck::libgen_download(c.search_address(), r, download_dir(), c.user, c.password, path, err);
+  } else {
+    ck::OpdsEntry e;
+    e.title = request.param("title");
+    e.author = request.param("author");
+    e.download_url = request.param("url");
+    e.download_type = request.param("type");
+    ok = ck::download_opds_entry(e, download_dir(), c.user, c.password, path, err);
+  }
+  if (!ok) {
+    CK_LOGW("shelfmark download failed: %s", err.c_str());
+    return error_page(502, "Not downloaded", err, back, "/shelfmark", "Shelfmark",
+                      kShelfmarkAccent);
+  }
+  CK_LOGI("shelfmark downloaded %s", path.c_str());
+  std::string body = notice("good", "<p><b>" + esc(request.param("title")) +
+                                        "</b> is on this Kobo, as<br>" + esc(shown_path(path)) +
+                                        "</p>");
+  body += notice("note", "<p>To see it in your library: close this window and tap <b>Sync</b> on "
+                         "the home screen.</p>");
+  body += button_link(back, "More results", true);
+  return sm_page("Downloaded", body, back, "Back");
 }
 
 }  // namespace
@@ -474,12 +699,41 @@ void ensure_catalogue_file() {
   }
 }
 
+void ensure_shelfmark_file() {
+  std::string path = ck::paths().data + "/shelfmark.txt";
+  if (ck::fs::exists(path)) return;
+  ck::fs::mkdir_p(ck::paths().data);
+  const char* kTemplate =
+      "# Shelfmark - search servers\n"
+      "#\n"
+      "# Shelfmark is a search engine. It has nothing to do with catalogues.txt:\n"
+      "# this file, and only this file, is the list of servers Shelfmark searches.\n"
+      "#\n"
+      "# One server per line. Use a hostname, not an IP number, so the same line\n"
+      "# works at home and away:\n"
+      "#\n"
+      "#   Name | https://host/search.php?req={searchTerms}\n"
+      "#   Name | https://host/search.php?req={searchTerms} | user | password\n"
+      "#\n"
+      "# A search-format server (search.php / json.php, the libgen search shape)\n"
+      "# is searched in that format; an OPDS server that offers a search works\n"
+      "# too. No servers are shipped - add your own below.\n"
+      "\n";
+  if (ck::fs::write_file_atomic(path, kTemplate)) {
+    CK_LOGI("wrote %s", path.c_str());
+  }
+}
+
 Response handle(const Request& request) {
   const std::string& path = request.path;
   if (path == "/" || path == "/index.html") return home(request);
   if (path == "/downloads") return downloads();
   if (path == "/help") return help();
   if (path == "/status") return status();
+  if (path == "/shelfmark") return shelfmark_home(request);
+  if (path == "/shelfmark/search") return shelfmark_search(request);
+  if (path == "/shelfmark/book") return shelfmark_book(request);
+  if (path == "/shelfmark/download") return shelfmark_download(request);
 
   if (ck::starts_with(path, "/c/")) {
     std::string rest = path.substr(3);

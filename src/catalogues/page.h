@@ -15,7 +15,8 @@ namespace catalogues {
 
 // A whole document. `back` is a link for the top-left corner, or empty.
 std::string page(const std::string& title, const std::string& body,
-                 const std::string& back_href = "", const std::string& back_label = "Back");
+                 const std::string& back_href = "", const std::string& back_label = "Back",
+                 const std::string& accent = "");
 
 // One tappable row in a list. `meta` is smaller text under the title;
 // `tag` sits on the right; `image` is a thumbnail address, or empty.

@@ -29,6 +29,9 @@ std::string download_dir();
 // in it, if there is none yet.
 void ensure_catalogue_file();
 
+// Writes Shelfmark's own (empty, commented) sources file if there is none.
+void ensure_shelfmark_file();
+
 // The text that file starts out with.
 std::string catalogue_file_template();
 

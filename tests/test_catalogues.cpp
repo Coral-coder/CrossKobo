@@ -324,6 +324,50 @@ int main() {
     CHECK(has(fetch(kAppPort, "GET", ""), "HTTP/1.1 400"));
   }
 
+
+  // ------------------------------------------------ Shelfmark: its own file
+  // Shelfmark is a search engine with its own sources file, separate from
+  // catalogues.txt. Point it at the fake search-format server.
+  fs::write_file_atomic(p.data + "/shelfmark.txt",
+                        "# mine\n"
+                        "My Fic | " + fake_base() + "/search.php?req={searchTerms}\n");
+  std::string sm = fetch(kAppPort, "GET", "/shelfmark");
+  CHECK(has(sm, "HTTP/1.1 200"));
+  CHECK(has(sm, "<h1>Shelfmark</h1>"));
+  CHECK(has(sm, "#6a1b9a"));                        // its own colour, not the blue
+  CHECK(has(sm, "action=\"/shelfmark/search\""));
+  CHECK(has(sm, "My Fic"));
+  // A search hits the source and lists results, each a Shelfmark book link.
+  std::string smr = fetch(kAppPort, "GET", "/shelfmark/search?q=dragons");
+  CHECK(has(smr, "HTTP/1.1 200"));
+  CHECK(has(smr, "Fic about dragons"));
+  CHECK(has(smr, "/shelfmark/book?s=0"));
+  CHECK(has(smr, "#6a1b9a"));
+  std::string smbook_href = link_after(smr, "Fic about dragons");
+  CHECK(starts_with(smbook_href, "/shelfmark/book?s=0"));
+  std::string smbook = fetch(kAppPort, "GET", smbook_href);
+  CHECK(has(smbook, "action=\"/shelfmark/download\""));
+  CHECK(has(smbook, "name=\"s\" value=\"0\""));
+  CHECK(has(smbook, "name=\"md5\" value=\"0123456789abcdef0123456789abcdef\""));
+  // And a download lands a file, via Shelfmark's own route.
+  std::string smform = "s=0&title=Fic+about+dragons&author=A.+Writer&url=&type=&md5="
+                       "0123456789abcdef0123456789abcdef&ext=epub&back=%2Fshelfmark";
+  std::string smdone = fetch(kAppPort, "POST", "/shelfmark/download", smform);
+  CHECK(has(smdone, "HTTP/1.1 200"));
+  CHECK(has(smdone, "<h1>Downloaded</h1>"));
+  CHECK(has(smdone, "class=\"good\""));
+  // Shelfmark never touched catalogues.txt.
+  {
+    std::string cats;
+    fs::read_file(p.data + "/catalogues.txt", cats);
+    CHECK(!has(cats, "My Fic"));
+  }
+  // With no shelfmark.txt, Shelfmark says how to set up its own file.
+  fs::remove_file(p.data + "/shelfmark.txt");
+  std::string sm_empty = fetch(kAppPort, "GET", "/shelfmark");
+  CHECK(has(sm_empty, "No search servers yet"));
+  CHECK(has(sm_empty, "shelfmark.txt"));
+
   stop = true;
   fake.join();
   app.join();
