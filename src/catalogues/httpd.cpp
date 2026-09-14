@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <thread>
 #include <vector>
 
 #include "core/clock.h"
@@ -68,7 +69,7 @@ bool read_request(int fd, Request& out) {
     struct pollfd pfd;
     pfd.fd = fd;
     pfd.events = POLLIN;
-    if (poll(&pfd, 1, 15000) <= 0) return false;
+    if (poll(&pfd, 1, 10000) <= 0) return false;
     ssize_t n = read(fd, buffer, sizeof(buffer));
     if (n <= 0) return false;
     data.append(buffer, (size_t)n);
@@ -101,7 +102,7 @@ bool read_request(int fd, Request& out) {
     struct pollfd pfd;
     pfd.fd = fd;
     pfd.events = POLLIN;
-    if (poll(&pfd, 1, 15000) <= 0) return false;
+    if (poll(&pfd, 1, 10000) <= 0) return false;
     ssize_t n = read(fd, buffer, sizeof(buffer));
     if (n <= 0) return false;
     body.append(buffer, (size_t)n);
@@ -289,17 +290,26 @@ bool serve(const std::string& bind_address, int port, const Handler& handler,
     if (client < 0) continue;
     last_request = ck::now_ms();
     setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-    Request request;
-    if (read_request(client, request)) {
-      send(client, handler(request));
-    } else {
-      Response bad;
-      bad.status = 400;
-      bad.content_type = "text/plain";
-      bad.body = "bad request\n";
-      send(client, bad);
-    }
-    close(client);
+    // One thread per connection. A browser opens several at once - a real
+    // request plus speculative ones that may send nothing - and a server
+    // that took them one at a time would block on an empty one for the
+    // whole read timeout while the real request waited unaccepted, so the
+    // page never loaded. Each connection now stands on its own; a silent
+    // one just times out its own thread. `handler` is copied in, not
+    // referenced, so a thread still finishing after serve() returns is safe.
+    std::thread([client, handler]() {
+      Request request;
+      if (read_request(client, request)) {
+        send(client, handler(request));
+      } else {
+        Response bad;
+        bad.status = 400;
+        bad.content_type = "text/plain";
+        bad.body = "bad request\n";
+        send(client, bad);
+      }
+      close(client);
+    }).detach();
     last_request = ck::now_ms();
   }
   close(listener);

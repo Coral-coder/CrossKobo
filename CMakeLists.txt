@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(crosskobo CXX C)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
@@ -56,7 +59,7 @@ add_library(ck_catalogues STATIC
   src/catalogues/page.cpp
   src/catalogues/service.cpp
 )
-target_link_libraries(ck_catalogues PUBLIC ck_core)
+target_link_libraries(ck_catalogues PUBLIC ck_core Threads::Threads)
 add_executable(catalogues src/catalogues/main.cpp)
 target_link_libraries(catalogues PRIVATE ck_catalogues)
 
