@@ -11,7 +11,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <thread>
+#include <csignal>
+#include <sys/wait.h>
 #include <vector>
 
 #include "core/clock.h"
@@ -273,6 +274,8 @@ bool serve(const std::string& bind_address, int port, const Handler& handler,
     return false;
   }
   CK_LOGI("httpd: listening on %s:%d", bind_address.c_str(), port);
+  // Reap connection children automatically; we never wait on them.
+  signal(SIGCHLD, SIG_IGN);
   if (on_ready) on_ready();
 
   int64_t last_request = ck::now_ms();
@@ -290,14 +293,18 @@ bool serve(const std::string& bind_address, int port, const Handler& handler,
     if (client < 0) continue;
     last_request = ck::now_ms();
     setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-    // One thread per connection. A browser opens several at once - a real
-    // request plus speculative ones that may send nothing - and a server
-    // that took them one at a time would block on an empty one for the
-    // whole read timeout while the real request waited unaccepted, so the
-    // page never loaded. Each connection now stands on its own; a silent
-    // one just times out its own thread. `handler` is copied in, not
-    // referenced, so a thread still finishing after serve() returns is safe.
-    std::thread([client, handler]() {
+    // One child process per connection. A browser opens several at once -
+    // a real request plus speculative ones that may send nothing - and a
+    // server that took them one at a time would block on an empty one for
+    // the whole read timeout while the real request waited unaccepted, so
+    // the page never loaded. fork() gives each connection its own process,
+    // so a silent one only stalls itself. We fork rather than thread on
+    // purpose: this binary is fully static, and a static build using
+    // std::thread can crash at startup on the device's glibc - which is
+    // exactly the blank, no-log hang it produced.
+    pid_t pid = fork();
+    if (pid == 0) {
+      close(listener);
       Request request;
       if (read_request(client, request)) {
         send(client, handler(request));
@@ -309,7 +316,9 @@ bool serve(const std::string& bind_address, int port, const Handler& handler,
         send(client, bad);
       }
       close(client);
-    }).detach();
+      _exit(0);
+    }
+    close(client);
     last_request = ck::now_ms();
   }
   close(listener);
