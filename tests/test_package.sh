@@ -199,15 +199,23 @@ mkdir -p "${WORK}/cat"
 unzip -q -o "${CAT_ZIP}" -d "${WORK}/cat"
 [ -f "${WORK}/cat/.adds/nm/catalogues" ]
 check $? "ships the NickelMenu entries on the drive"
-[ -f "${WORK}/cat/.adds/catalogues/catalogues.txt" ]
-check $? "ships the catalogue file on the drive"
-grep -q '^Project Gutenberg' "${WORK}/cat/.adds/catalogues/catalogues.txt"
-check $? "catalogue file starts with the public catalogues"
-if grep -viE '^#|gutenberg|archive\.org|example\.net' "${WORK}/cat/.adds/catalogues/catalogues.txt" |
-        grep -q '://'; then
-    check 1 "catalogue file ships no other addresses"
+[ -f "${WORK}/cat/.adds/catalogues/catalogues.txt.example" ]
+check $? "ships catalogues.txt.example (a reference, not the live file)"
+[ -f "${WORK}/cat/.adds/catalogues/shelfmark.txt.example" ]
+check $? "ships shelfmark.txt.example (a reference, not the live file)"
+# The live files must NOT be shipped, or a re-extract would wipe the
+# reader's own servers.
+if [ -e "${WORK}/cat/.adds/catalogues/catalogues.txt" ] || \
+   [ -e "${WORK}/cat/.adds/catalogues/shelfmark.txt" ]; then
+    check 1 "does not ship the live catalogues.txt / shelfmark.txt"
 else
-    check 0 "catalogue file ships no other addresses"
+    check 0 "does not ship the live catalogues.txt / shelfmark.txt"
+fi
+# The examples carry only commented addresses - nothing active.
+if grep -viE '^#' "${WORK}/cat/.adds/catalogues/catalogues.txt.example" | grep -q '://'; then
+    check 1 "the example files have no active addresses"
+else
+    check 0 "the example files have no active addresses"
 fi
 mkdir -p "${WORK}/catroot"
 tar -xzf "${WORK}/cat/.kobo/KoboRoot.tgz" -C "${WORK}/catroot"

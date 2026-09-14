@@ -175,32 +175,48 @@ CAT="${STAGE}/catalogues"
 mkdir -p "${CAT}/.kobo" "${CAT}/.adds/nm" "${CAT}/.adds/catalogues"
 cp "${STAGE}/catalogues-KoboRoot.tgz" "${CAT}/.kobo/KoboRoot.tgz"
 install -m 644 scripts/install/nm-catalogues "${CAT}/.adds/nm/catalogues"
-# The catalogue file, so there is something to edit over USB before the
-# first tap. The program writes the same one if it is missing.
-cat > "${CAT}/.adds/catalogues/catalogues.txt" <<'TXT'
-# Catalogues
+# Example files ONLY - never the live catalogues.txt / shelfmark.txt. The
+# program creates those itself, once, if they are missing, and then leaves
+# them alone; the zip must not carry them or every re-extract would wipe
+# out the servers the reader has added. These .example files are safe to
+# overwrite because nobody edits them - they are just something to copy a
+# line out of.
+cat > "${CAT}/.adds/catalogues/catalogues.txt.example" <<'TXT'
+# Catalogues - OPDS feeds (browsed from the Catalogues menu entry).
 #
-# One server per line. Edit this over USB, or paste in a line a friend
-# sent you; the page reads it fresh every time it opens.
+# This is an EXAMPLE. Your real list is catalogues.txt (no .example), which
+# the app creates once and never overwrites. Copy lines you want into it.
 #
-#   Name | address
-#   Name | address | user | password
-#   Name | address | libgen
+# One server per line, a hostname rather than an IP number:
 #
-# Use a hostname rather than an IP number, so the same line works at
-# home and away. The kind of server is worked out from the address:
-# search.php or json.php means a search-format server, {searchTerms} a
-# search endpoint, anything else an OPDS feed. Say libgen or opds
-# outright if the guess is wrong.
+#   Name | https://host/opds
+#   Name | https://host/opds | user | password
 #
-# Examples of your own, commented out:
-# Shelfmark   | https://books.example.net/opds | me | secret
-# My server   | https://fic.example.net/search.php?req={searchTerms}
-
-Project Gutenberg | https://m.gutenberg.org/ebooks.opds/
-Internet Archive  | https://bookserver.archive.org/catalog/
+# Anything that is not an OPDS feed - a Library-Genesis-style search server
+# - belongs in shelfmark.txt instead, and is used from the Shelfmark entry.
+#
+# Public OPDS catalogues you might want (copy into catalogues.txt to use):
+# Project Gutenberg | https://m.gutenberg.org/ebooks.opds/
+# Internet Archive  | https://bookserver.archive.org/catalog/
 TXT
-chmod 644 "${CAT}/.adds/catalogues/catalogues.txt"
+chmod 644 "${CAT}/.adds/catalogues/catalogues.txt.example"
+cat > "${CAT}/.adds/catalogues/shelfmark.txt.example" <<'TXT'
+# Shelfmark - search servers (used from the Shelfmark menu entry).
+#
+# This is an EXAMPLE. Your real list is shelfmark.txt (no .example), which
+# the app creates once and never overwrites. Copy a line into it.
+#
+# Shelfmark is a search engine set up exactly like Library Genesis: give it
+# your server's address - the base URL, or the full search route - and it
+# searches there and downloads. One per line, hostnames not IP numbers:
+#
+#   My server | https://fic.example.net
+#   My server | https://fic.example.net/search?q={searchTerms}
+#   My server | https://fic.example.net/search.php?req={searchTerms} | user | password
+#
+# No servers are shipped - add your own to shelfmark.txt.
+TXT
+chmod 644 "${CAT}/.adds/catalogues/shelfmark.txt.example"
 cat > "${CAT}/READ-ME-FIRST.txt" <<TXT
 Catalogues ${VERSION}
 =================
@@ -217,8 +233,12 @@ Kobo software stays exactly as it is; this adds entries to its menu.
 Everything is done in the Kobo's browser: tap a catalogue, tap a folder,
 tap a book, tap Download. Searching uses the Kobo's own keyboard.
 
-Your servers go in .adds/catalogues/catalogues.txt on this drive, one per
-line - the file explains itself. A friend can send you a line to paste in.
+Your servers go in two files on this drive, which the app creates once and
+then never overwrites - so updating never wipes your list:
+  .adds/catalogues/catalogues.txt   OPDS feeds (the Catalogues entry)
+  .adds/catalogues/shelfmark.txt    search servers (the Shelfmark entry)
+This zip ships only *.example copies of them to crib lines from; your real
+files are left alone. A friend can send you a line to paste in.
 
 Downloads land in the Downloads folder on this drive. Tap Sync on the home
 screen, or "Catalogues - add downloads to library" in the menu, and they
