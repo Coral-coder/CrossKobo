@@ -31,6 +31,8 @@ enum class Icon {
   ChevronDown,
   Shift,
   Backspace,
+  Wifi,
+  WifiOff,
 };
 
 // Draws `icon` centred in `box`, sized to fit, in `color`.

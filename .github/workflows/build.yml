@@ -88,7 +88,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build g++-arm-linux-gnueabihf qemu-user-static zip unzip shellcheck
+            cmake ninja-build g++-arm-linux-gnueabihf qemu-user-static zip unzip shellcheck \
+            autoconf automake libtool make file
 
       - name: Check the installer scripts
         run: |
@@ -96,7 +97,7 @@ jobs:
             sh -n "$f"
           done
           shellcheck -s sh -S warning scripts/install/*.sh scripts/install/crosskobo.init \
-            scripts/package.sh tests/test_package.sh
+            scripts/package.sh scripts/fetch-nickelmenu.sh tests/test_package.sh
 
       - name: Configure
         run: |
@@ -107,16 +108,52 @@ jobs:
       - name: Build
         run: cmake --build build-arm -j"$(nproc)"
 
-      - name: Check the binary is a static ARM executable
+      - name: Check the binaries are static ARM executables
         run: |
-          file build-arm/crosskobo
-          file build-arm/crosskobo | grep -q "ARM"
-          file build-arm/crosskobo | grep -q "statically linked"
+          for b in build-arm/crosskobo build-arm/catalogues; do
+            file "$b"
+            file "$b" | grep -q "ARM"
+            file "$b" | grep -q "statically linked"
+          done
 
-      - name: Run the device binary under emulation
+      - name: Run the device binaries under emulation
         run: |
           qemu-arm-static ./build-arm/crosskobo --version
+          qemu-arm-static ./build-arm/catalogues --version
           qemu-arm-static ./build-arm/crosskobo-sim --root out/arm-root --out out/arm
+
+      # The Catalogues package carries NickelMenu, so the menu entries are
+      # there without anything to install by hand. Pinned by hash.
+      - name: Cache NickelMenu
+        id: nickelmenu-cache
+        uses: actions/cache@v4
+        with:
+          path: release/nickelmenu
+          key: nickelmenu-${{ hashFiles('scripts/fetch-nickelmenu.sh') }}
+
+      - name: Fetch NickelMenu
+        if: steps.nickelmenu-cache.outputs.cache-hit != 'true'
+        run: scripts/fetch-nickelmenu.sh
+
+      # The fetcher CrossKobo ships for https: a static armhf curl with its
+      # own TLS and its own DNS. Cached, because building it takes longer
+      # than everything else here put together.
+      - name: Cache the fetcher
+        id: fetcher-cache
+        uses: actions/cache@v4
+        with:
+          path: release/bin/curl
+          key: fetcher-${{ runner.os }}-${{ hashFiles('scripts/build-fetcher.sh') }}
+
+      - name: Build the fetcher
+        if: steps.fetcher-cache.outputs.cache-hit != 'true'
+        run: scripts/build-fetcher.sh
+
+      # Proven on ARM, against a real server, verifying a real certificate -
+      # and refusing one it cannot verify. A fetcher that builds but cannot
+      # resolve a name would look installed and break every catalogue.
+      - name: Check the fetcher
+        run: scripts/check-fetcher.sh release/bin/curl third_party/cacert.pem
 
       - name: Package
         run: scripts/package.sh
@@ -143,11 +180,21 @@ jobs:
           body: |
             CrossKobo ${{ inputs.release_tag || github.ref_name }}
 
-            **Install:** unpack `CrossKobo-*-install.zip` to the root of the
-            Kobo's USB drive and eject. Firmware 5.x devices use the
-            `-fw5-install` package instead.
+            Unpack a zip to the root of the Kobo's USB drive and eject; the
+            device installs it and restarts by itself.
 
-            **Uninstall:** unpack `CrossKobo-*-uninstall.zip` the same way.
+            **`Catalogues-*-install.zip`** - book catalogues in the Kobo's
+            own browser: Shelfmark, Calibre-Web, Kavita, Komga, Project
+            Gutenberg, and a search-format server of your own, listed in a
+            text file on the drive. The stock software stays exactly as it
+            is; NickelMenu is bundled and puts the entries in its menu.
+            Nothing runs at boot. See `docs/CATALOGUES.md`. Firmware 4.x.
 
-            Read `docs/INSTALL.md` first, including the recovery section.
-            This build has not been tested on hardware.
+            **`CrossKobo-*-install.zip`** - the full interface, which starts
+            instead of the stock Kobo home screen. Firmware 5.x devices use
+            the `-fw5-install` package. Read `docs/INSTALL.md` first,
+            including the recovery section: holding a page-turn button while
+            the device starts boots the stock software, and both page
+            buttons together open touch calibration.
+
+            **Uninstall:** unpack the matching `-uninstall.zip` the same way.

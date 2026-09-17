@@ -21,6 +21,16 @@ class App {
   void pop();
   void replace(ViewPtr view);
   void pop_to_root();
+  // When set, going back from the root view leaves CrossKobo instead of
+  // doing nothing. Used by the menu launches from the stock software, where
+  // one screen is the whole application.
+  void set_quit_on_back(bool on) { quit_on_back_ = on; }
+  // Minimal mode: the shell borrows the screen from software that is still
+  // in charge of the device, so it does none of the things an interface
+  // that owns the device does - no sleep timer, no USB prompt, no update
+  // check, no boot-animation sweep. Used by the standalone catalogues app.
+  void set_minimal(bool on) { minimal_ = on; }
+  bool minimal() const { return minimal_; }
   View* top();
   size_t depth() const { return stack_.size(); }
 
@@ -42,6 +52,7 @@ class App {
   void return_to_kobo_ui();
 
   void show_toast(const std::string& message, int ms = 1800);
+  void clear_toast() { toast_text_.clear(); }
   // Simple modal confirm; blocks in its own event loop.
   bool confirm(const std::string& title, const std::string& message,
                const std::string& ok_label = "OK",
@@ -83,6 +94,9 @@ class App {
   bool asleep_ = false;
   int64_t last_activity_ms_ = 0;
   int64_t sleep_started_ms_ = 0;
+  bool quit_on_back_ = false;
+  bool minimal_ = false;
+  bool clock_synced_ = false;
   bool usb_prompt_open_ = false;
   bool usb_was_plugged_ = false;
 

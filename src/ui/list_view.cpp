@@ -75,9 +75,14 @@ void ListView::draw(Canvas& canvas, const Rect& bounds) {
     for (int i = first_visible_; i < (int)items_.size() && y + row_h <= list_area.bottom(); ++i) {
       Rect row(list_area.x, y, list_area.w, row_h);
       if (items_[i].separator) {
-        canvas.fill_rect(row, th.panel);
+        if (th.gradients) {
+          canvas.fill_rect_gradient(row, th.section_top, th.section_bottom);
+          canvas.fill_gloss(row, 0, 80);
+        } else {
+          canvas.fill_rect(row, th.panel);
+        }
         draw_text_in(canvas, row.inset(th.padding, 0), items_[i].row.title,
-                     ui_style(th.small_px, th.muted, FontStyle::Bold), -1);
+                     ui_style(th.small_px, th.section_text, FontStyle::Bold), -1);
       } else {
         draw_list_row(canvas, row, items_[i].row);
         hits_.add(row, items_[i].id);

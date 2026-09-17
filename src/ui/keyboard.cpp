@@ -31,7 +31,7 @@ void KeyboardView::draw(Canvas& canvas, const Rect& bounds) {
   const Theme& th = theme();
   hits_.clear();
   keys_.clear();
-  canvas.clear(th.bg);
+  paint_background(canvas);
 
   StatusBarInfo info;
   int top = draw_top_bar(canvas, bounds, title_, info);

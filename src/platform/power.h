@@ -42,6 +42,11 @@ class Power {
 
   // Charging LED, where the hardware has one.
   void set_charging_led(bool on);
+  // Stops the boot indicator. The firmware blinks the LED until the stock
+  // software reports itself up; CrossKobo stops that software, so nothing
+  // ever turns the blink off unless we do. Sweeps every LED the kernel
+  // exposes, since the node name differs by board.
+  void stop_boot_led();
 
  private:
   Power() = default;

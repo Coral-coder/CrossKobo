@@ -1,6 +1,7 @@
 // Host-side simulator. It runs the real application against an in-memory
 // framebuffer and writes each screen to a PNG, which is how the interface
 // is reviewed and regression-checked without a Kobo on the desk.
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -20,6 +21,7 @@
 #include "notes/notes.h"
 #include "platform/device.h"
 #include "platform/input.h"
+#include "platform/net.h"
 #include "platform/screen.h"
 #include "reader/reader.h"
 #include "reader/state.h"
@@ -31,14 +33,29 @@ namespace {
 
 std::string g_out = "out/sim";
 int g_shots = 0;
+// When set, every shot is also written scaled to this width under
+// <out>/doc, which is what the documentation gallery embeds.
+int g_doc_width = 0;
 
 void shot(const std::string& name) {
+  // Screenshots should show the screen, not a toast left over from setup.
+  App::instance().clear_toast();
   App::instance().render_now();
   std::string path = format("%s/%02d-%s.png", g_out.c_str(), ++g_shots, name.c_str());
-  if (Screen::instance().canvas().save_png(path)) {
+  const Canvas& src = Screen::instance().canvas();
+  if (src.save_png(path)) {
     printf("  %s\n", path.c_str());
   } else {
     printf("  FAILED to write %s\n", path.c_str());
+  }
+  if (g_doc_width > 0 && src.width() > 0) {
+    int h = std::max(1, src.height() * g_doc_width / src.width());
+    Canvas small(g_doc_width, h);
+    small.clear(Color::gray(255));
+    small.blit_scaled(src, small.bounds());
+    std::string dir = g_out + "/doc";
+    fs::mkdir_p(dir);
+    small.save_png(dir + "/" + name + ".png");
   }
 }
 
@@ -132,6 +149,8 @@ int main(int argc, char** argv) {
       book = argv[++i];
     } else if (arg == "--out" && i + 1 < argc) {
       g_out = argv[++i];
+    } else if (arg == "--doc-width" && i + 1 < argc) {
+      g_doc_width = to_int(argv[++i], 0);
     } else if (arg == "--size" && i + 1 < argc) {
       std::vector<std::string> parts = split(argv[++i], 'x');
       if (parts.size() == 2) {
@@ -189,6 +208,21 @@ int main(int argc, char** argv) {
   settings().theme = UiTheme::Dashboard;
   refresh_theme_from_settings(Screen::instance().dpi());
   shot("home-dashboard");
+
+  settings().theme = UiTheme::Aero;
+  refresh_theme_from_settings(Screen::instance().dpi());
+  shot("home-aero");
+  show(make_quick_panel(), "quick-panel-aero");
+  App::instance().pop();
+  show(make_library_screen(root), "library-aero");
+  App::instance().pop();
+  show(make_transfer_screen(), "transfer-aero");
+  App::instance().pop();
+  show(make_catalogue_screen(), "catalogues-aero");
+  App::instance().pop();
+  show(make_settings_screen(), "settings-aero");
+  App::instance().pop();
+
   settings().theme = UiTheme::Classic;
   refresh_theme_from_settings(Screen::instance().dpi());
 
@@ -247,6 +281,19 @@ int main(int argc, char** argv) {
   show(make_notes_browser(), "notes-browser");
   app.pop();
 
+  // The network screen, with a simulated radio so it can be reviewed.
+  Net::instance().set_simulated(true);
+  Net::instance().power_on();
+  show(make_network_screen(), "wifi");
+  app.pop();
+  Net::instance().connect("Reading Room", "", false);
+  show(make_network_screen(), "wifi-connected");
+  app.pop();
+
+  // The USB chooser, which is what a cable going in looks like.
+  show(make_usb_prompt_screen(), "usb-prompt");
+  app.pop();
+
   show(make_settings_screen(), "settings");
   app.pop();
   show(make_stats_screen(), "statistics");
@@ -261,6 +308,10 @@ int main(int argc, char** argv) {
   refresh_theme_from_settings(Screen::instance().dpi());
   Screen::instance().set_night_mode(true);
   shot("home-night");
+  settings().theme = UiTheme::Aero;
+  refresh_theme_from_settings(Screen::instance().dpi());
+  shot("home-aero-night");
+  settings().theme = UiTheme::Classic;
   settings().night_mode = false;
   refresh_theme_from_settings(Screen::instance().dpi());
 

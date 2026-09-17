@@ -65,6 +65,25 @@ Json Settings::to_json() const {
   j["autoPageTurnSeconds"] = Json(auto_page_turn_seconds);
   j["statusBarTitle"] = Json(status_bar_title);
   j["statusBarClock"] = Json(status_bar_clock);
+  j["autoUpdateCheck"] = Json(auto_update_check);
+  j["clockSync"] = Json(clock_sync);
+  j["touchCalibrated"] = Json(touch_calibrated);
+  {
+    Json list = Json::array();
+    for (const Catalogue& c : catalogues) {
+      if (c.from_file) continue;   // the file owns those
+      Json entry = Json::object();
+      entry["name"] = Json(c.name);
+      entry["url"] = Json(c.url);
+      if (!c.search.empty()) entry["search"] = Json(c.search);
+      if (c.format != "opds") entry["format"] = Json(c.format);
+      if (!c.user.empty()) entry["user"] = Json(c.user);
+      if (!c.password.empty()) entry["password"] = Json(c.password);
+      list.push_back(entry);
+    }
+    j["catalogues"] = list;
+    j["catalogueFolder"] = Json(catalogue_folder);
+  }
   j["statusBarBattery"] = Json(status_bar_battery);
   j["statusBarProgressBar"] = Json(status_bar_progress_bar);
   j["statusBarProgressBarThickness"] = Json(status_bar_progress_thickness);
@@ -135,6 +154,28 @@ void Settings::from_json(const Json& j) {
   }
   status_bar_title = j.get_bool("statusBarTitle", status_bar_title);
   status_bar_clock = j.get_bool("statusBarClock", status_bar_clock);
+  auto_update_check = j.get_bool("autoUpdateCheck", auto_update_check);
+  clock_sync = j.get_bool("clockSync", clock_sync);
+  touch_calibrated = j.get_bool("touchCalibrated", touch_calibrated);
+  catalogue_folder = j.get_string("catalogueFolder", catalogue_folder);
+  if (!j.has("catalogues")) {
+    // A settings file from before catalogues existed: seed the defaults so
+    // the browser has something in it.
+    apply_catalogue_defaults();
+  }
+  if (const Json* list = j.find("catalogues")) {
+    catalogues.clear();
+    for (const Json& entry : list->items()) {
+      Catalogue c;
+      c.name = entry.get_string("name");
+      c.url = entry.get_string("url");
+      c.search = entry.get_string("search");
+      c.format = entry.get_string("format", "opds");
+      c.user = entry.get_string("user");
+      c.password = entry.get_string("password");
+      if (!c.url.empty() || !c.search.empty()) catalogues.push_back(c);
+    }
+  }
   status_bar_battery = j.get_bool("statusBarBattery", status_bar_battery);
   status_bar_progress_bar = j.get_bool("statusBarProgressBar", status_bar_progress_bar);
   status_bar_progress_thickness =
@@ -173,7 +214,7 @@ void Settings::from_json(const Json& j) {
   frontlight_warmth = std::max(0, std::min(100, j.get_int("frontlightWarmth", frontlight_warmth)));
   frontlight_on = j.get_bool("frontlightOn", frontlight_on);
 
-  theme = enum_from(j, "uiTheme", theme, 3);
+  theme = enum_from(j, "uiTheme", theme, 4);
   night_mode = j.get_bool("screenInverted", night_mode);
   cfa_mode = enum_from(j, "cfaMode", cfa_mode, 6);
   saturation_boost = (float)std::max(-1.0, std::min(1.0, j.get_double("saturationBoost",
@@ -189,14 +230,49 @@ void Settings::from_json(const Json& j) {
   log_debug = j.get_bool("logDebug", log_debug);
 }
 
+void Settings::apply_catalogue_defaults() {
+  // Public-domain libraries, so the catalogue browser is useful before
+  // anyone has typed an address. All of them are free to read and free to
+  // redistribute; anything else is for the reader to add.
+  const struct {
+    const char* name;
+    const char* url;
+  } kDefaults[] = {
+      // Open, no account needed. Standard Ebooks was in this list until its
+      // feed answered 401 in the fetcher check - seeding a catalogue that
+      // cannot be opened is worse than not seeding it.
+      {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/"},
+      {"Internet Archive", "https://bookserver.archive.org/catalog/"},
+  };
+  for (const auto& entry : kDefaults) {
+    bool known = false;
+    for (const Catalogue& c : catalogues) {
+      if (c.url == entry.url) known = true;
+    }
+    if (known) continue;
+    Catalogue c;
+    c.name = entry.name;
+    c.url = entry.url;
+    catalogues.push_back(c);
+  }
+}
+
+void Settings::apply_touch_defaults() {
+  const DeviceInfo& dev = device();
+  touch_transform = TouchTransform();
+  // A starting guess only. The panel's transposition is worked out from the
+  // kernel's own axis ranges, so this is just which way each axis runs;
+  // "Calibrate touch" settles it properly in three taps, and once it has,
+  // this is never applied again.
+  if (dev.codename.find("monza") != std::string::npos) {
+    touch_transform.mirror_x = true;
+  }
+}
+
 void Settings::apply_device_defaults() {
   const DeviceInfo& dev = device();
-  // The Libra Colour's touch panel reports Y inverted relative to the
-  // display; other models differ, and the calibration screen exists for
-  // the ones nobody has checked.
-  if (dev.codename.find("monza") != std::string::npos) {
-    touch_transform.mirror_y = true;
-  }
+  apply_touch_defaults();
+  apply_catalogue_defaults();
   if (!dev.has_frontlight) frontlight_on = false;
 }
 
@@ -209,6 +285,9 @@ void Settings::load() {
     return;
   }
   from_json(j);
+  // Until the user has calibrated, the touch transform is ours to guess -
+  // and an earlier build's guess should not outlive it.
+  if (!touch_calibrated) apply_touch_defaults();
   CK_LOGI("settings: loaded from %s", paths().settings_file().c_str());
 }
 

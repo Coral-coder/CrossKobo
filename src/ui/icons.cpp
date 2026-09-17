@@ -210,6 +210,19 @@ void draw_icon(Canvas& canvas, const Rect& box, Icon icon, Color color, int weig
       canvas.draw_rect(Rect(cx - half / 2, cy, half, half), color, weight);
       break;
     }
+    case Icon::Wifi:
+    case Icon::WifiOff: {
+      // Three arcs and a dot, the usual signal fan.
+      for (int ring = 1; ring <= 3; ++ring) {
+        int radius = r.w * ring / 6;
+        arc(canvas, cx, r.bottom() - weight, radius, 200.0f, 340.0f, color, weight);
+      }
+      canvas.fill_circle(cx, r.bottom() - weight, std::max(1, weight), color);
+      if (icon == Icon::WifiOff) {
+        canvas.draw_line(r.x, r.bottom(), r.right(), r.y, color, weight);
+      }
+      break;
+    }
     case Icon::Backspace: {
       canvas.draw_line(r.x, cy, r.x + r.w / 3, r.y, color, weight);
       canvas.draw_line(r.x, cy, r.x + r.w / 3, r.bottom(), color, weight);

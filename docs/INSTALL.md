@@ -11,6 +11,21 @@ release has not been run on real hardware yet.
 
 ---
 
+## Two ways to install
+
+**Catalogues** leaves your Kobo exactly as it is and puts book catalogues
+- Shelfmark, Calibre-Web, Kavita, Komga, Project Gutenberg, and a
+search-format server of your own - in the Kobo's own browser, from an
+entry in the stock menu. Nothing runs at boot and nothing of the CrossKobo
+interface is in it. It is its own package, `Catalogues-<version>-install.zip`,
+and has its own page: [docs/CATALOGUES.md](CATALOGUES.md).
+
+**The full CrossKobo interface** replaces the stock software at boot: its
+own library, reader, handwritten notebooks and statistics. That is what the
+rest of this document describes. The two can be installed together - the
+add-on's menu entries work either way - but the full interface is the one
+that needs the recovery section below.
+
 ## Before you start
 
 1. **Check your firmware version.** On the Kobo: *More → Settings → Device
@@ -86,6 +101,11 @@ only ever plug in to charge).
 
 Three options, in increasing order of permanence:
 
+**For one boot** — hold either page-turn button while the device starts.
+CrossKobo stands down and the stock Kobo software comes up. Nothing is
+changed, so the next restart is CrossKobo again. This is the quickest way
+back, and it needs no computer and no working touchscreen.
+
 **Just for now** — *Settings → Return to the Kobo UI*. The stock software
 starts immediately. CrossKobo comes back on the next power-on.
 
@@ -123,17 +143,36 @@ working. `.crosskobo/crosskobo.log` has the detail. Three failed starts in
 a row and CrossKobo writes its own `DISABLE` file and stops trying, so a
 bad build cannot lock you out.
 
-**The screen is stuck or nothing responds.** Hold the power button for
-about 30 seconds to force a power-off, then press it again. If the device
-comes back up in CrossKobo and immediately misbehaves, plug it into a
-computer: the drive still mounts in that state because the stock software
-is what handles USB, and once a `DISABLE` file exists, the next boot is
-stock.
+**Taps land in the wrong place.** Press **both page-turn buttons together**
+to open the calibration wizard and tap the three marked corners. It reads
+the digitiser directly, so it works even when nothing on screen can be hit.
 
-**The device will not mount over USB at all.** Power it off completely
-(hold power ~30 seconds). Hold the power button and plug the cable in; the
-Kobo boots and mounts before the interface starts, which is enough to place
-the `DISABLE` file.
+**The screen is stuck, or something is drawing over CrossKobo.** Plug the
+cable into a computer and wait about five seconds, then **press a page
+button**. CrossKobo notices the cable within two seconds and asks what to
+do, and that prompt is driven by the hardware buttons as well as by touch:
+page-forward shares the drive, page-back hands over to the stock software.
+Either one gets you a drive on the computer, so this works even when you
+cannot see or tap what is on the screen. (In 0.1.2 the prompt was a dialog
+where page-forward means *Switch to the Kobo UI*; the same press works.)
+If the first press does nothing, unplug, wait five seconds, plug in again
+and press the other button.
+
+**The device will not mount over USB at all.** Use the crash-loop guard on
+purpose: **force a power-off three times, each within two minutes of
+CrossKobo appearing.** Hold the power button for about
+30 seconds until the device switches off, press it to boot, let it reach
+CrossKobo, and force it off again. The launcher counts each start that
+never exited cleanly, and on the third it writes the `DISABLE` file itself
+and boots the stock software, which mounts over USB the way it always did.
+(Survive two minutes and the counter is cleared, so ordinary forced
+power-offs weeks apart never add up to this.)
+Nothing is uninstalled and nothing is lost - CrossKobo is simply switched
+off until you delete `.crosskobo/DISABLE` from the drive.
+
+Do not expect the stock software to answer the cable while CrossKobo is
+running: CrossKobo stops it at start-up, and from 0.1.3 it exports the
+drive itself instead.
 
 **Nothing works.** A Kobo factory reset restores the firmware from the
 device's recovery partition and removes anything installed to the root

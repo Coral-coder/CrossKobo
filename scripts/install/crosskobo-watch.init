@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Starts the CrossKobo launcher watcher, and nothing else.
+#
+# This is the whole of the catalogues add-on's presence at boot: it does not
+# stop the stock Kobo software, does not touch the screen, and does not care
+# what the stock software is doing. It waits for one of CrossKobo's files to
+# be opened from the Kobo library and starts CrossKobo when that happens.
+#
+# The full CrossKobo install does not need this - it owns the screen from
+# boot - so the watcher is only installed by the add-on package.
+
+INSTALL_DIR="/usr/local/crosskobo"
+ONBOARD="/mnt/onboard"
+LOG="${ONBOARD}/.crosskobo/watch.log"
+
+[ -x "${INSTALL_DIR}/crosskobo" ] || exit 0
+
+# The triggers live on the user partition, so there is nothing to watch
+# until it is mounted. Give it two minutes, then give up quietly.
+i=0
+while [ ${i} -lt 240 ]; do
+    if grep -q " ${ONBOARD} " /proc/mounts 2>/dev/null; then
+        break
+    fi
+    usleep 500000 2>/dev/null || sleep 1
+    i=$((i + 1))
+done
+grep -q " ${ONBOARD} " /proc/mounts 2>/dev/null || exit 0
+
+mkdir -p "${ONBOARD}/.crosskobo" 2>/dev/null
+# Keep the log from growing forever.
+if [ -f "${LOG}" ] && [ "$(wc -c < "${LOG}" 2>/dev/null || echo 0)" -gt 131072 ]; then
+    mv -f "${LOG}" "${LOG}.1"
+fi
+
+# The user's escape hatch works here too: with DISABLE in place, nothing of
+# CrossKobo's runs at all.
+[ -f "${ONBOARD}/.crosskobo/DISABLE" ] && exit 0
+
+# Already watching? Then leave it alone. Again, not "pidof crosskobo": that
+# also matches CrossKobo itself being used, and a reader who is in the
+# catalogue browser when this runs should not lose the watcher.
+WATCH_PID_FILE="/tmp/crosskobo-watch.pid"
+if [ -f "${WATCH_PID_FILE}" ]; then
+    watching="$(cat "${WATCH_PID_FILE}" 2>/dev/null)"
+    if [ -n "${watching}" ] && [ -d "/proc/${watching}" ]; then
+        exit 0
+    fi
+fi
+
+setsid "${INSTALL_DIR}/crosskobo" --watch >> "${LOG}" 2>&1 &
+echo $! > "${WATCH_PID_FILE}"
+exit 0

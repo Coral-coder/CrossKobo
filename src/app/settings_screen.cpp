@@ -8,6 +8,7 @@
 #include "app/app.h"
 #include "app/home.h"
 #include "app/settings.h"
+#include "app/update.h"
 #include "core/clock.h"
 #include "core/fs.h"
 #include "core/log.h"
@@ -17,9 +18,11 @@
 #include "gfx/font.h"
 #include "library/library.h"
 #include "platform/device.h"
+#include "platform/net.h"
 #include "platform/power.h"
 #include "platform/screen.h"
 #include "platform/system.h"
+#include "platform/usbms.h"
 #include "reader/state.h"
 #include "ui/list_view.h"
 #include "ui/theme.h"
@@ -149,7 +152,7 @@ void push_display_settings() {
     Settings& s = settings();
     Power& power = Power::instance();
     std::vector<ListView::Item> items;
-    const char* themes[] = {"Classic", "Minimal", "Dashboard"};
+    const char* themes[] = {"Classic", "Minimal", "Dashboard", "Aero"};
     items.push_back(row(kTheme, "Interface theme", themes[(int)s.theme]));
     items.push_back(row(kNight, "Night mode", on_off(s.night_mode)));
     if (Screen::instance().color()) {
@@ -182,7 +185,7 @@ void push_display_settings() {
     int delta = right_half(list) ? 1 : -1;
     switch (id) {
       case kTheme:
-        s.theme = (UiTheme)(((int)s.theme + 1) % 3);
+        s.theme = (UiTheme)(((int)s.theme + 1) % 4);
         refresh_theme_from_settings(Screen::instance().dpi());
         App::instance().invalidate(Refresh::Flash);
         break;
@@ -324,7 +327,7 @@ void push_power_settings() {
 }
 
 void push_controls_settings() {
-  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kCalibrate };
+  enum { kSwap, kFollow, kTapZones, kTapMenu, kUsb, kShareNow, kCalibrate, kWizard };
   auto build = []() {
     Settings& s = settings();
     std::vector<ListView::Item> items;
@@ -335,25 +338,62 @@ void push_controls_settings() {
     const char* zones[] = {"Standard", "Inverted", "Off"};
     items.push_back(row(kTapZones, "Tap zones", zones[(int)s.tap_zones]));
     items.push_back(row(kTapMenu, "Centre tap opens menu", on_off(s.tap_for_reader_menu)));
-    items.push_back(row(kUsb, "When USB is connected",
-                        s.usb_action == "ask" ? "Ask"
-                                              : (s.usb_action == "handover" ? "Switch to Kobo UI"
-                                                                            : "Ignore")));
+    const char* usb_label = "Ask";
+    if (s.usb_action == "handover") usb_label = "Switch to Kobo UI";
+    if (s.usb_action == "mount") usb_label = "Share the drive";
+    if (s.usb_action == "ignore") usb_label = "Just charge";
+    items.push_back(row(kUsb, "When USB is connected", usb_label));
+    items.push_back(row(kShareNow, "Share the drive now", "",
+                        UsbMs::instance().blocker().empty()
+                            ? "Needs the cable plugged in"
+                            : UsbMs::instance().blocker()));
+    items.push_back(row(kWizard, "Calibrate touch",
+                        settings().touch_calibrated ? "Calibrated" : "Automatic",
+                        "Tap three corners; works even when taps land in the wrong "
+                        "place. Both page buttons together opens this from anywhere."));
     items.push_back(row(kCalibrate, "Touch and stylus test",
-                        "", "Check where taps land and fix mirrored axes"));
+                        "", "Check where taps land, and the stylus axes"));
     return items;
   };
   auto handler = [](int id, DynamicList& list) {
     Settings& s = settings();
     switch (id) {
+      case kWizard: App::instance().push(make_touch_wizard()); break;
       case kSwap: s.buttons_swapped = !s.buttons_swapped; break;
       case kFollow: s.buttons_follow_rotation = !s.buttons_follow_rotation; break;
       case kTapZones: s.tap_zones = (TapZones)(((int)s.tap_zones + 1) % 3); break;
       case kTapMenu: s.tap_for_reader_menu = !s.tap_for_reader_menu; break;
       case kUsb:
-        s.usb_action = s.usb_action == "ask" ? "handover"
-                                             : (s.usb_action == "handover" ? "ignore" : "ask");
+        if (s.usb_action == "ask") {
+          s.usb_action = "mount";
+        } else if (s.usb_action == "mount") {
+          s.usb_action = "handover";
+        } else if (s.usb_action == "handover") {
+          s.usb_action = "ignore";
+        } else {
+          s.usb_action = "ask";
+        }
         break;
+      case kShareNow: {
+        UsbMs& usb = UsbMs::instance();
+        std::string blocker = usb.blocker();
+        if (!blocker.empty()) {
+          App::instance().show_message("Cannot share the drive", blocker);
+          return;
+        }
+        if (!sys::usb_plugged()) {
+          App::instance().show_message("Cannot share the drive",
+                                       "Plug the device into a computer first.");
+          return;
+        }
+        s.save();
+        if (usb.start()) {
+          App::instance().push(make_usb_active_screen());
+        } else {
+          App::instance().show_message("Could not share the drive", usb.last_error());
+        }
+        return;
+      }
       case kCalibrate:
         App::instance().push(make_calibration_screen());
         return;
@@ -410,6 +450,66 @@ void push_library_settings() {
 
 // ----------------------------------------------------------- settings root
 
+
+// Checks for a newer release, offers to fetch it, and stages it the way the
+// firmware expects. Blocking and modal on purpose: the screen cannot show
+// progress and stay interactive, and the whole thing takes seconds.
+void check_for_update_interactively() {
+  App& app = App::instance();
+  if (update_staged()) {
+    if (app.confirm("Update ready",
+                    "An update is already downloaded and installs the next time the "
+                    "device restarts.",
+                    "Restart now", "Later")) {
+      settings().save();
+      Screen::instance().close();
+      Power::instance().reboot();
+    }
+    return;
+  }
+  if (!Net::instance().connected()) {
+    app.show_message("Software update",
+                     "Connect to Wi-Fi first: Settings has a Wi-Fi entry.");
+    return;
+  }
+  app.show_toast("Checking for updates…", 4000);
+  app.render_now();
+
+  UpdateInfo info;
+  std::string error;
+  if (!check_for_update(info, error)) {
+    app.show_message("Software update", error);
+    return;
+  }
+  if (!info.newer) {
+    app.show_message("Software update",
+                     format("CrossKobo %s is the latest version.", kVersion));
+    return;
+  }
+  std::string message = format("CrossKobo %s is available.\n\nYou have %s.\n\n%s\n\n%s",
+                               info.version.c_str(), kVersion,
+                               info.size > 0 ? human_size((uint64_t)info.size).c_str() : "",
+                               info.notes.c_str());
+  if (!app.confirm("Update available", message, "Download", "Not now")) return;
+
+  app.show_toast("Downloading " + info.version + "…", 60000);
+  app.render_now();
+  if (!stage_update(info, error)) {
+    app.show_message("Update failed", error);
+    return;
+  }
+  app.clear_toast();
+  if (app.confirm("Update downloaded",
+                  format("CrossKobo %s installs when the device restarts.\n\nYour books, "
+                         "notebooks and settings are untouched.",
+                         info.version.c_str()),
+                  "Restart now", "Later")) {
+    settings().save();
+    Screen::instance().close();
+    Power::instance().reboot();
+  }
+}
+
 ViewPtr make_settings_screen() {
   enum {
     kReading = 1,
@@ -418,7 +518,11 @@ ViewPtr make_settings_screen() {
     kPower,
     kControls,
     kLibrary,
+    kCatalogues,
+    kTransfer,
+    kNetwork,
     kAbout,
+    kUpdate,
     kReturnToKobo,
     kRestart,
   };
@@ -431,8 +535,28 @@ ViewPtr make_settings_screen() {
   items.push_back(row(kPower, "Power and sleep"));
   items.push_back(row(kControls, "Controls"));
   items.push_back(row(kLibrary, "Library"));
+  items.push_back(row(kTransfer, "Send over Wi-Fi", "",
+                      "Opens a page a browser on the same network can use"));
+  items.push_back(row(kCatalogues, "Catalogues",
+                      settings().catalogues.empty()
+                          ? ""
+                          : format("%zu saved", settings().catalogues.size()),
+                      "Browse an OPDS library over Wi-Fi and download books"));
+  {
+    Net& net = Net::instance();
+    net.refresh_status();
+    items.push_back(row(kNetwork, "Wi-Fi",
+                        net.connected() ? net.current_ssid()
+                                        : (net.available() ? "Off" : "Unavailable"),
+                        net.connected() ? net.status_text() : ""));
+  }
   items.push_back(section("System"));
-  items.push_back(row(kAbout, "About CrossKobo"));
+  items.push_back(row(kAbout, "About CrossKobo", kVersion));
+  items.push_back(row(kUpdate, "Software update",
+                      update_staged() ? "Waiting for a restart" : "",
+                      update_staged()
+                          ? "An update is staged and installs on the next restart"
+                          : "Checks the release page over Wi-Fi"));
   items.push_back(row(kRestart, "Restart CrossKobo"));
   items.push_back(row(kReturnToKobo, "Return to the Kobo UI", "",
                       "Starts the stock software until the next restart"));
@@ -445,11 +569,15 @@ ViewPtr make_settings_screen() {
       case kPower: push_power_settings(); break;
       case kControls: push_controls_settings(); break;
       case kLibrary: push_library_settings(); break;
+      case kCatalogues: App::instance().push(make_catalogue_screen()); break;
+      case kTransfer: App::instance().push(make_transfer_screen()); break;
+      case kNetwork: App::instance().push(make_network_screen()); break;
       case kAbout: App::instance().push(make_about_screen()); break;
       case kRestart:
         settings().save();
         App::instance().quit(kExitRestart);
         break;
+      case kUpdate: check_for_update_interactively(); break;
       case kReturnToKobo:
         if (App::instance().confirm(
                 "Return to the Kobo UI",
@@ -542,7 +670,7 @@ class CalibrationScreen : public View {
   void draw(Canvas& canvas, const Rect& bounds) override {
     const Theme& th = theme();
     hits_.clear();
-    canvas.clear(th.bg);
+    paint_background(canvas);
     StatusBarInfo info;
     int top = draw_top_bar(canvas, bounds, "Touch and stylus test", info);
 
