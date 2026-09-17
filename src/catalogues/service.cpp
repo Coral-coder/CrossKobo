@@ -15,6 +15,7 @@
 #include "app/settings.h"
 #include "catalogues/page.h"
 #include "core/fs.h"
+#include "core/json.h"
 #include "core/log.h"
 #include "core/paths.h"
 #include "core/str.h"
@@ -527,6 +528,56 @@ const char* kShelfmarkAccent = "#0369a1";   // calibrain's sky-blue primary
 
 std::string shelfmark_file_path() { return ck::paths().data + "/shelfmark.txt"; }
 
+// The reader's Shelfmark preferences, toggled from the search page and kept
+// in a small file so they stick between sessions.
+struct SmOptions {
+  bool english_only = true;    // keep only English (and unknown-language) hits
+  bool formats_first = true;   // sort EPUB, then PDF, then MOBI to the top
+  int per_page = 20;           // how many cards to show before "Show more"
+};
+
+std::string sm_options_path() { return ck::paths().data + "/shelfmark-options.json"; }
+
+SmOptions load_sm_options() {
+  SmOptions o;
+  ck::Json j;
+  if (ck::Json::parse_file(sm_options_path(), j) && j.is_object()) {
+    o.english_only = j.get_bool("englishOnly", o.english_only);
+    o.formats_first = j.get_bool("formatsFirst", o.formats_first);
+    o.per_page = j.get_int("perPage", o.per_page);
+    if (o.per_page < 5) o.per_page = 5;
+    if (o.per_page > 200) o.per_page = 200;
+  }
+  return o;
+}
+
+void save_sm_options(const SmOptions& o) {
+  ck::Json j;
+  j["englishOnly"] = ck::Json(o.english_only);
+  j["formatsFirst"] = ck::Json(o.formats_first);
+  j["perPage"] = ck::Json((int64_t)o.per_page);
+  ck::fs::write_file_atomic(sm_options_path(), j.dump(true));
+}
+
+// English (or an unknown language, which the server often leaves blank) is
+// kept; anything explicitly another language is dropped when the toggle is on.
+bool result_is_english(const std::string& language) {
+  std::string l = ck::to_lower(ck::trim(language));
+  return l.empty() || l == "en" || l.find("english") != std::string::npos;
+}
+
+// EPUB first, then PDF, then MOBI, then the other e-reader formats, then the
+// rest - the order a Kobo reader wants.
+int format_rank(const std::string& ext) {
+  std::string e = ck::to_lower(ext);
+  if (e == "epub") return 0;
+  if (e == "pdf") return 1;
+  if (e == "mobi") return 2;
+  if (e == "azw3" || e == "azw" || e == "kepub") return 3;
+  if (e == "fb2" || e == "txt" || e == "cbz" || e == "cbr" || e == "djvu") return 4;
+  return 9;
+}
+
 std::vector<Settings::Catalogue> shelfmark_sources() {
   std::string text;
   if (!ck::fs::read_file(shelfmark_file_path(), text)) return {};
@@ -570,36 +621,79 @@ std::string sm_card(const std::string& href, const std::string& title,
   return out;
 }
 
+// A normalised search hit, so results from every server can be filtered,
+// sorted and paged together before any card HTML is built.
+struct Hit {
+  std::string href;
+  std::string title;
+  std::string author;
+  std::string meta;
+  std::string cover;
+  std::string ext;        // for format ranking
+  std::string language;   // for the English filter
+};
+
+std::string render_hit(const Hit& h) {
+  return sm_card(h.href, h.title, h.author, h.meta, h.cover);
+}
+
 // One result, whichever kind of server it came from. `s` is the source
 // index, so the download knows which server (and which credentials) to use.
-std::string sm_libgen_row(size_t s, const std::string& label, const ck::SearchResult& r,
-                          const std::string& back) {
-  std::string href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&md5=" + ck::url_encode(r.md5) +
-                     "&url=" + ck::url_encode(r.direct_url) + "&title=" + ck::url_encode(r.title) +
-                     "&author=" + ck::url_encode(r.author) + "&ext=" + ck::url_encode(r.extension) +
-                     "&size=" + ck::url_encode(r.size_text) + "&year=" + ck::url_encode(r.year) +
-                     "&back=" + ck::url_encode(back);
-  // year · FORMAT · size · [server], the way calibrain's card meta reads.
-  std::string meta;
+Hit hit_from_libgen(size_t s, const std::string& label, const ck::SearchResult& r,
+                    const std::string& back) {
+  Hit h;
+  h.href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&md5=" + ck::url_encode(r.md5) +
+           "&url=" + ck::url_encode(r.direct_url) + "&title=" + ck::url_encode(r.title) +
+           "&author=" + ck::url_encode(r.author) + "&ext=" + ck::url_encode(r.extension) +
+           "&size=" + ck::url_encode(r.size_text) + "&year=" + ck::url_encode(r.year) +
+           "&back=" + ck::url_encode(back);
   auto add = [&](const std::string& s) {
-    if (!s.empty()) meta += (meta.empty() ? "" : " · ") + s;
+    if (!s.empty()) h.meta += (h.meta.empty() ? "" : " · ") + s;
   };
   add(r.year);
   add(ck::to_upper(r.extension));
   add(r.size_text);
+  if (!r.language.empty()) add(r.language);
   add(label);
-  return sm_card(href, r.title, r.author, meta, r.cover_url);
+  h.title = r.title;
+  h.author = r.author;
+  h.cover = r.cover_url;
+  h.ext = r.extension;
+  h.language = r.language;
+  return h;
 }
 
-std::string sm_opds_row(size_t s, const std::string& label, const ck::OpdsEntry& e,
-                        const std::string& back) {
-  std::string href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&url=" +
-                     ck::url_encode(e.download_url) + "&title=" + ck::url_encode(e.title) +
-                     "&author=" + ck::url_encode(e.author) + "&type=" +
-                     ck::url_encode(e.download_type) + "&back=" + ck::url_encode(back);
-  std::string meta = ck::to_upper(ck::fs::extension(e.filename()));
-  if (!label.empty()) meta += (meta.empty() ? "" : " · ") + label;
-  return sm_card(href, e.title, e.author, meta, e.cover_url);
+Hit hit_from_opds(size_t s, const std::string& label, const ck::OpdsEntry& e,
+                  const std::string& back) {
+  Hit h;
+  h.href = "/shelfmark/book?s=" + ck::format("%zu", s) + "&url=" +
+           ck::url_encode(e.download_url) + "&title=" + ck::url_encode(e.title) +
+           "&author=" + ck::url_encode(e.author) + "&type=" +
+           ck::url_encode(e.download_type) + "&back=" + ck::url_encode(back);
+  h.ext = ck::fs::extension(e.filename());
+  h.meta = ck::to_upper(h.ext);
+  if (!label.empty()) h.meta += (h.meta.empty() ? "" : " · ") + label;
+  h.title = e.title;
+  h.author = e.author;
+  h.cover = e.cover_url;
+  return h;
+}
+
+// The toggle row above the results: English-only, format priority, and how
+// many per page. Each is a link that flips the setting and re-runs the search.
+std::string sm_options_bar(const SmOptions& o, const std::string& q) {
+  std::string qp = "&q=" + ck::url_encode(q);
+  auto pill = [&](const std::string& opt, const std::string& label, bool on) {
+    return "<a class=\"pill" + std::string(on ? " on" : "") + "\" href=\"/shelfmark/opt?o=" +
+           opt + qp + "\">" + esc(label) + (on ? " ✓" : "") + "</a>";
+  };
+  std::string out = "<div class=\"opts\">";
+  out += pill("english", "English only", o.english_only);
+  out += pill("formats", "EPUB/PDF/MOBI first", o.formats_first);
+  out += "<a class=\"pill\" href=\"/shelfmark/opt?o=perpage" + qp + "\">" +
+         ck::format("%d per page", o.per_page) + "</a>";
+  out += "</div>\n";
+  return out;
 }
 
 std::string shelfmark_setup_note() {
@@ -623,6 +717,7 @@ Response shelfmark_home(const Request& request) {
   if (src.empty()) {
     body += shelfmark_setup_note();
   } else {
+    body += sm_options_bar(load_sm_options(), "");
     std::string names;
     for (size_t i = 0; i < src.size(); ++i) names += (i ? ", " : "") + src[i].name;
     body += notice("note", "<p>Type above to search: <b>" + esc(names) + "</b>.</p>");
@@ -643,13 +738,15 @@ Response shelfmark_search(const Request& request) {
     body += shelfmark_setup_note();
     return sm_page("Shelfmark", body);
   }
+  SmOptions opts = load_sm_options();
+  body += sm_options_bar(opts, q);
   if (q.empty()) return sm_page("Shelfmark", body);
-  if (!wait_for_network(20000)) {
+  if (!wait_for_network(15000)) {
     return not_connected("Shelfmark", here, "/shelfmark", kShelfmarkAccent);
   }
 
-  int found = 0;
-  std::string rows;
+  // Gather every server's hits into one list, then filter, sort and page it.
+  std::vector<Hit> hits;
   std::string trouble;
   bool multi = src.size() > 1;
   for (size_t i = 0; i < src.size(); ++i) {
@@ -662,10 +759,7 @@ Response shelfmark_search(const Request& request) {
         trouble += "<p>" + esc(c.name) + ": " + esc(err) + "</p>";
         continue;
       }
-      for (const ck::SearchResult& r : results) {
-        rows += sm_libgen_row(i, label, r, here);
-        ++found;
-      }
+      for (const ck::SearchResult& r : results) hits.push_back(hit_from_libgen(i, label, r, here));
     } else {
       std::string tmpl = c.search;
       std::string err;
@@ -684,25 +778,81 @@ Response shelfmark_search(const Request& request) {
       }
       for (const ck::OpdsEntry& e : feed.entries) {
         if (e.download_url.empty()) continue;
-        rows += sm_opds_row(i, label, e, here);
-        ++found;
+        hits.push_back(hit_from_opds(i, label, e, here));
       }
     }
   }
-  if (found == 0) {
-    body += notice("note", "<p>Nothing found for <b>" + esc(q) + "</b>.</p>");
-    // The parser saw an answer it could not read: it saved exactly what the
-    // server sent. Say where, so the markup can be looked at.
-    std::string dump = ck::paths().data + "/last-search.html";
-    if (ck::fs::exists(dump)) {
-      body += notice("note", "<p>The server answered but nothing could be read from it. "
-                             "The raw answer was saved to <b>" + esc(shown_path(dump)) +
-                             "</b> on the Kobo's drive.</p>");
+
+  size_t total_raw = hits.size();
+  // English-only, when the toggle is on.
+  if (opts.english_only) {
+    std::vector<Hit> kept;
+    for (Hit& h : hits) {
+      if (result_is_english(h.language)) kept.push_back(std::move(h));
+    }
+    hits.swap(kept);
+  }
+  // EPUB/PDF/MOBI to the top, when the toggle is on (stable, so each server's
+  // order is otherwise preserved).
+  if (opts.formats_first) {
+    std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
+      return format_rank(a.ext) < format_rank(b.ext);
+    });
+  }
+
+  // How many to show: `n` grows by a page each time "Show more" is tapped.
+  size_t show = (size_t)opts.per_page;
+  int want = ck::to_int(request.param("n"), 0);
+  if (want > 0) show = (size_t)want;
+  if (show > hits.size()) show = hits.size();
+
+  if (hits.empty()) {
+    if (total_raw > 0 && opts.english_only) {
+      body += notice("note", "<p>Found " + ck::format("%zu", total_raw) +
+                             ", but none in English. Turn off <b>English only</b> above to "
+                             "see them.</p>");
+    } else {
+      body += notice("note", "<p>Nothing found for <b>" + esc(q) + "</b>.</p>");
+      std::string dump = ck::paths().data + "/last-search.html";
+      if (ck::fs::exists(dump)) {
+        body += notice("note", "<p>The server answered but nothing could be read from it. "
+                               "The raw answer was saved to <b>" + esc(shown_path(dump)) +
+                               "</b> on the Kobo's drive.</p>");
+      }
+    }
+  } else {
+    std::string rows;
+    for (size_t i = 0; i < show; ++i) rows += render_hit(hits[i]);
+    body += "<div class=\"grid\">" + rows + "</div>";
+    if (show < hits.size()) {
+      std::string more = "/shelfmark/search?q=" + ck::url_encode(q) + "&n=" +
+                         ck::format("%zu", show + (size_t)opts.per_page);
+      body += "<p class=\"small\">Showing " + ck::format("%zu of %zu", show, hits.size()) +
+              ".</p>";
+      body += button_link(more, "Show more", true);
     }
   }
-  if (!rows.empty()) body += "<div class=\"grid\">" + rows + "</div>";
   if (!trouble.empty()) body += notice("bad", trouble);
   return sm_page("Shelfmark", body, "/shelfmark", "Shelfmark");
+}
+
+// Flip a Shelfmark preference and re-run the search that was showing.
+Response shelfmark_opt(const Request& request) {
+  SmOptions o = load_sm_options();
+  std::string opt = request.param("o");
+  if (opt == "english") {
+    o.english_only = !o.english_only;
+  } else if (opt == "formats") {
+    o.formats_first = !o.formats_first;
+  } else if (opt == "perpage") {
+    o.per_page = o.per_page == 10   ? 20
+                 : o.per_page == 20 ? 30
+                 : o.per_page == 30 ? 50
+                                    : 10;
+  }
+  save_sm_options(o);
+  std::string q = request.param("q");
+  return redirect(q.empty() ? "/shelfmark" : "/shelfmark/search?q=" + ck::url_encode(q));
 }
 
 Response shelfmark_book(const Request& request) {
@@ -858,6 +1008,7 @@ Response handle(const Request& request) {
   if (path == "/status") return status();
   if (path == "/shelfmark") return shelfmark_home(request);
   if (path == "/shelfmark/search") return shelfmark_search(request);
+  if (path == "/shelfmark/opt") return shelfmark_opt(request);
   if (path == "/shelfmark/book") return shelfmark_book(request);
   if (path == "/shelfmark/download") return shelfmark_download(request);
 

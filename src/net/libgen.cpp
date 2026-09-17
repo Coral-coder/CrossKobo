@@ -57,6 +57,22 @@ bool looks_like_year(const std::string& text) {
   return year >= 1400 && year <= 2200;
 }
 
+// A cell whose whole text is a language name, so the Language column can be
+// picked out by content the way the other columns are.
+bool looks_like_language(const std::string& text) {
+  static const char* kLangs[] = {
+      "english",   "spanish",  "french",     "german",   "italian",   "russian",
+      "portuguese","chinese",  "japanese",   "dutch",    "polish",    "arabic",
+      "turkish",   "swedish",  "danish",     "norwegian","finnish",   "greek",
+      "hebrew",    "hindi",    "korean",     "czech",    "hungarian", "romanian",
+      "ukrainian", "indonesian","vietnamese","thai",     "catalan",   "latin"};
+  std::string t = to_lower(trim(text));
+  for (const char* lang : kLangs) {
+    if (t == lang) return true;
+  }
+  return false;
+}
+
 // Case-insensitive member lookup: forks disagree about capitalisation.
 std::string json_field(const Json& object, const std::vector<std::string>& names) {
   for (const auto& member : object.members()) {
@@ -236,6 +252,8 @@ void parse_libgen_html(const std::string& html, std::vector<SearchResult>& out) 
             result.size_text = value;
           } else if (result.year.empty() && looks_like_year(value)) {
             result.year = value;
+          } else if (result.language.empty() && looks_like_language(value)) {
+            result.language = value;
           }
         }
         // The title is the text of the md5 title link; if none looked like a
@@ -340,6 +358,7 @@ bool parse_libgen_json(const std::string& text, std::vector<SearchResult>& out) 
     result.author = json_field(item, {"author", "authors", "creator"});
     result.md5 = to_lower(json_field(item, {"md5", "hash"}));
     result.extension = to_lower(json_field(item, {"extension", "ext", "format"}));
+    result.language = json_field(item, {"language", "lang"});
     result.year = json_field(item, {"year", "date"});
     std::string size = json_field(item, {"filesize", "size", "bytes"});
     if (!size.empty()) {
@@ -490,7 +509,9 @@ bool libgen_search(const std::string& base_address, const std::string& query,
   auto add_probes = [&](const std::string& q_or_empty) {
     std::string q = q_or_empty;                  // the param the user named, if any
     // The reference downloader's exact form first: index.php?req=...&res=N.
-    candidates.push_back(endpoint.base + "/index.php?req=" + encoded + "&res=100");
+    // A modest res keeps the answer (and the page of covers it becomes) small
+    // and quick rather than a hundred rows the e-ink browser crawls through.
+    candidates.push_back(endpoint.base + "/index.php?req=" + encoded + "&res=50");
     // Then the full-keys request, for clones that demand the column set.
     candidates.push_back(endpoint.base + "/index.php?req=" + encoded + li_keys);
     if (!q.empty()) {
@@ -502,13 +523,8 @@ bool libgen_search(const std::string& base_address, const std::string& query,
       candidates.push_back(endpoint.base + "/fiction/?" + qs);
     }
     candidates.push_back(endpoint.base + "/fiction/?q=" + encoded);
-    candidates.push_back(endpoint.base + "/search.php?req=" + encoded + "&column=def");
     candidates.push_back(endpoint.base + "/search.php?req=" + encoded);
     candidates.push_back(endpoint.base + "/index.php?req=" + encoded);
-    candidates.push_back(endpoint.base +
-                         "/search?index=&page=1&display=table&q=" + encoded);
-    candidates.push_back(endpoint.base + "/search?q=" + encoded);
-    candidates.push_back(endpoint.base + "/search?req=" + encoded);
     candidates.push_back(endpoint.base +
                          "/json.php?object=e&addkeys=*&fields=*&req=" + encoded);
   };
@@ -549,7 +565,7 @@ bool libgen_search(const std::string& base_address, const std::string& query,
     return s;
   };
   for (const std::string& url : candidates) {
-    HttpResponse response = http_get(url, 20000);
+    HttpResponse response = http_get(url, 8000);
     std::string snippet = trim(response.body).substr(0, 80);
     for (char& ch : snippet) {
       if (ch == '\n' || ch == '\r') ch = ' ';
@@ -640,7 +656,7 @@ bool libgen_resolve_download(const std::string& base_address, const SearchResult
       endpoint.base + "/fiction/" + result.md5,
   };
   for (const std::string& url : pages) {
-    HttpResponse response = http_get(url, 15000);
+    HttpResponse response = http_get(url, 8000);
     std::string snippet = trim(response.body).substr(0, 100);
     for (char& ch : snippet) {
       if (ch == '\n' || ch == '\r') ch = ' ';

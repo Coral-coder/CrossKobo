@@ -19,6 +19,7 @@ struct SearchResult {
   std::string extension;   // lowercase, no dot
   std::string size_text;   // as the server wrote it, for display
   std::string year;
+  std::string language;    // as the row gave it, e.g. "English"
   std::string md5;
   std::string direct_url;  // set when the answer gave one outright
   std::string cover_url;   // a thumbnail, when the row carried one

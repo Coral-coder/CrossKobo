@@ -458,6 +458,7 @@ int main() {
       CHECK(res[0].author == "Author Name");
       CHECK(res[0].extension == "pdf");
       CHECK(res[0].year == "2019");
+      CHECK(res[0].language == "English");
     }
   }
 

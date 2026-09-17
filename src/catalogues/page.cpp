@@ -31,6 +31,9 @@ a{color:inherit;text-decoration:none}
 .card .ca{font-size:14px;color:#555;margin-top:4px}
 .card .cm{font-size:12px;color:#777;margin-top:6px;font-family:Helvetica,Arial,sans-serif}
 .card .cd{background:#0369a1;color:#fff;text-align:center;font-weight:bold;padding:12px;font-family:Helvetica,Arial,sans-serif}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.opts .pill{display:inline-block;padding:8px 14px;border:2px solid #0369a1;border-radius:9999px;color:#0369a1;font-size:16px;font-family:Helvetica,Arial,sans-serif;white-space:nowrap}
+.opts .pill.on{background:#0369a1;color:#fff}
 .row.nav .t{color:#1d4f91}
 .row.nav .t:before{content:"\25B8 ";color:#1d4f91}
 form.search{margin:12px 0 18px;overflow:hidden}
