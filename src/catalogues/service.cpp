@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <vector>
 
@@ -142,19 +143,43 @@ const char* kNickelStatus = "/tmp/nickel-hardware-status";
 bool library_import_available() { return ck::fs::exists(kNickelStatus); }
 
 void trigger_library_import() {
-  if (!library_import_available()) return;
+  if (!library_import_available()) {
+    CK_LOGI("import: %s not present, leaving the book for a manual Sync", kNickelStatus);
+    return;
+  }
   pid_t pid = fork();
   if (pid != 0) return;                 // the handler carries on and answers the browser
   setsid();                             // detach from this connection
-  usleep(2500 * 1000);                  // let the Downloaded page render first
-  int fd = open(kNickelStatus, O_WRONLY | O_NONBLOCK);
-  if (fd >= 0) {
-    auto put = [&](const char* s) { ssize_t n = write(fd, s, strlen(s)); (void)n; };
-    put("usb plug add\n");
-    usleep(1500 * 1000);
-    put("usb plug remove\n");
-    close(fd);
+  // Drop every inherited descriptor - above all the browser's socket and the
+  // listening socket - so this child does not hold the connection open (which
+  // hangs the browser after a download) or keep the server port busy.
+  for (int fd = 0; fd < 1024; ++fd) close(fd);
+  int null_fd = open("/dev/null", O_RDWR);
+  if (null_fd >= 0) {
+    dup2(null_fd, 0);
+    dup2(null_fd, 1);
+    dup2(null_fd, 2);
+    if (null_fd > 2) close(null_fd);
   }
+  usleep(2500 * 1000);                  // let the Downloaded page render first
+  // Flush the just-downloaded file to the FAT partition first, or Nickel
+  // scans and finds nothing new when it re-imports.
+  sync();
+  int fd = open(kNickelStatus, O_WRONLY | O_NONBLOCK);
+  if (fd < 0) {
+    CK_LOGW("import: could not open %s (errno %d)", kNickelStatus, errno);
+    _exit(0);
+  }
+  auto put = [&](const char* s) {
+    ssize_t n = write(fd, s, strlen(s));
+    CK_LOGI("import: wrote '%s' (%zd)", s, n);
+  };
+  // Replay the plug/unplug Nickel imports on. The pause between them gives
+  // Nickel time to enter and leave USB mode; the import runs on "remove".
+  put("usb plug add");
+  usleep(2000 * 1000);
+  put("usb plug remove");
+  close(fd);
   _exit(0);
 }
 
