@@ -385,9 +385,17 @@ std::string unescape_href(std::string s) {
     }
   };
   replace_all_of("&amp;", "&");
+  replace_all_of("&#38;", "&");
+  replace_all_of("&#x26;", "&");
   replace_all_of("&gt;", ">");
   replace_all_of("&lt;", "<");
-  return s;
+  // A download URL should have no stray whitespace; a space in it makes curl
+  // reject the whole address.
+  replace_all_of(" ", "%20");
+  replace_all_of("\t", "");
+  replace_all_of("\n", "");
+  replace_all_of("\r", "");
+  return trim(s);
 }
 }  // namespace
 
@@ -716,7 +724,7 @@ bool libgen_download(const std::string& base, const SearchResult& result,
 
   HttpRequest request;
   if (!Url::parse(url, request.url)) {
-    error = "That download address is not valid.";
+    error = "That download address is not valid: " + url;
     return false;
   }
   request.download_path = target;
@@ -733,8 +741,11 @@ bool libgen_download(const std::string& base, const SearchResult& result,
     CK_LOGW("download: %s -> status %d, error '%s'", url.c_str(), response.status,
             response.error.c_str());
     fs::remove_file(target);
-    error = response.error.empty() ? format("Download failed (%d).", response.status)
-                                   : response.error;
+    std::string why = response.error.empty() ? format("Download failed (%d).", response.status)
+                                             : response.error;
+    // Name the exact address that failed, so the reason is visible without
+    // digging through the log.
+    error = why + "\nTried: " + url;
     return false;
   }
   // Anything below a few KB is an error or challenge page, not a book - the
